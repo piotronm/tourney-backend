@@ -1,0 +1,14 @@
+{
+  "teams": [
+    { "name": "Eagles" },
+    { "name": "Hawks" },
+    { "name": "Falcons" },
+    { "name": "Ravens" },
+    { "name": "Owls" }
+  ],
+  "options": {
+    "seed": 100,
+    "shuffle": false,
+    "poolStrategy": "respect-input"
+  }
+}

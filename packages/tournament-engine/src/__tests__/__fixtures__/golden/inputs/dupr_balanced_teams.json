@@ -1,0 +1,18 @@
+{
+  "players": [
+    { "name": "Alice Anderson", "duprRating": 5.5 },
+    { "name": "Bob Baker", "duprRating": 4.2 },
+    { "name": "Charlie Chen", "duprRating": 6.1 },
+    { "name": "Diana Davis", "duprRating": 3.8 }
+  ],
+  "duprOptions": {
+    "strategy": "balanced",
+    "seed": 600,
+    "teamSize": 2
+  },
+  "options": {
+    "seed": 600,
+    "shuffle": false,
+    "poolStrategy": "respect-input"
+  }
+}

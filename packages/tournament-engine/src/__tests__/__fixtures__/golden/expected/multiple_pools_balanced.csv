@@ -1,0 +1,13 @@
+Pool,Round,Match,TeamA,ScoreA,ScoreB,TeamB,Status
+Pool A,1,1,Alpha,,,Delta,pending
+Pool A,1,2,Beta,,,Gamma,pending
+Pool A,2,3,Alpha,,,Gamma,pending
+Pool A,2,4,Delta,,,Beta,pending
+Pool A,3,5,Alpha,,,Beta,pending
+Pool A,3,6,Gamma,,,Delta,pending
+Pool B,1,7,Epsilon,,,Theta,pending
+Pool B,1,8,Zeta,,,Eta,pending
+Pool B,2,9,Epsilon,,,Eta,pending
+Pool B,2,10,Theta,,,Zeta,pending
+Pool B,3,11,Epsilon,,,Zeta,pending
+Pool B,3,12,Eta,,,Theta,pending

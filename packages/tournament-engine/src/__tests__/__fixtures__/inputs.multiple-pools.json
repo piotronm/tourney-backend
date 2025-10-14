@@ -1,0 +1,8 @@
+[
+  { "name": "Team A1", "poolId": 1 },
+  { "name": "Team A2", "poolId": 1 },
+  { "name": "Team A3", "poolId": 1 },
+  { "name": "Team B1", "poolId": 2 },
+  { "name": "Team B2", "poolId": 2 },
+  { "name": "Team B3", "poolId": 2 }
+]

@@ -1,0 +1,21 @@
+{
+  "teams": [
+    { "name": "Pool A Team 1", "poolId": 1 },
+    { "name": "Pool A Team 2", "poolId": 1 },
+    { "name": "Pool A Team 3", "poolId": 1 },
+    { "name": "Pool A Team 4", "poolId": 1 },
+    { "name": "Pool B Team 1", "poolId": 2 },
+    { "name": "Pool B Team 2", "poolId": 2 },
+    { "name": "Pool B Team 3", "poolId": 2 },
+    { "name": "Pool B Team 4", "poolId": 2 },
+    { "name": "Pool C Team 1", "poolId": 3 },
+    { "name": "Pool C Team 2", "poolId": 3 },
+    { "name": "Pool C Team 3", "poolId": 3 },
+    { "name": "Pool C Team 4", "poolId": 3 }
+  ],
+  "options": {
+    "seed": 200,
+    "shuffle": false,
+    "poolStrategy": "respect-input"
+  }
+}

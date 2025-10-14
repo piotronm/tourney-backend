@@ -1,0 +1,11 @@
+{
+  "teams": [
+    { "name": "Team A" },
+    { "name": "Team B" }
+  ],
+  "options": {
+    "seed": 400,
+    "shuffle": false,
+    "poolStrategy": "respect-input"
+  }
+}

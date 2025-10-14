@@ -1,0 +1,68 @@
+[
+  {
+    "id": 1,
+    "poolId": 1,
+    "round": 1,
+    "matchNumber": 1,
+    "teamAId": 2,
+    "teamBId": 3,
+    "scoreA": null,
+    "scoreB": null,
+    "status": "pending"
+  },
+  {
+    "id": 2,
+    "poolId": 1,
+    "round": 2,
+    "matchNumber": 2,
+    "teamAId": 1,
+    "teamBId": 3,
+    "scoreA": null,
+    "scoreB": null,
+    "status": "pending"
+  },
+  {
+    "id": 3,
+    "poolId": 1,
+    "round": 3,
+    "matchNumber": 3,
+    "teamAId": 1,
+    "teamBId": 2,
+    "scoreA": null,
+    "scoreB": null,
+    "status": "pending"
+  },
+  {
+    "id": 1,
+    "poolId": 2,
+    "round": 1,
+    "matchNumber": 4,
+    "teamAId": 5,
+    "teamBId": 6,
+    "scoreA": null,
+    "scoreB": null,
+    "status": "pending"
+  },
+  {
+    "id": 2,
+    "poolId": 2,
+    "round": 2,
+    "matchNumber": 5,
+    "teamAId": 4,
+    "teamBId": 6,
+    "scoreA": null,
+    "scoreB": null,
+    "status": "pending"
+  },
+  {
+    "id": 3,
+    "poolId": 2,
+    "round": 3,
+    "matchNumber": 6,
+    "teamAId": 4,
+    "teamBId": 5,
+    "scoreA": null,
+    "scoreB": null,
+    "status": "pending"
+  }
+]

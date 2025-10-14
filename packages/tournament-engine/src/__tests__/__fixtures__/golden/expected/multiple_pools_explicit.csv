@@ -1,0 +1,19 @@
+Pool,Round,Match,TeamA,ScoreA,ScoreB,TeamB,Status
+Pool A,1,1,Pool A Team 1,,,Pool A Team 4,pending
+Pool A,1,2,Pool A Team 2,,,Pool A Team 3,pending
+Pool A,2,3,Pool A Team 1,,,Pool A Team 3,pending
+Pool A,2,4,Pool A Team 4,,,Pool A Team 2,pending
+Pool A,3,5,Pool A Team 1,,,Pool A Team 2,pending
+Pool A,3,6,Pool A Team 3,,,Pool A Team 4,pending
+Pool B,1,7,Pool B Team 1,,,Pool B Team 4,pending
+Pool B,1,8,Pool B Team 2,,,Pool B Team 3,pending
+Pool B,2,9,Pool B Team 1,,,Pool B Team 3,pending
+Pool B,2,10,Pool B Team 4,,,Pool B Team 2,pending
+Pool B,3,11,Pool B Team 1,,,Pool B Team 2,pending
+Pool B,3,12,Pool B Team 3,,,Pool B Team 4,pending
+Pool C,1,13,Pool C Team 1,,,Pool C Team 4,pending
+Pool C,1,14,Pool C Team 2,,,Pool C Team 3,pending
+Pool C,2,15,Pool C Team 1,,,Pool C Team 3,pending
+Pool C,2,16,Pool C Team 4,,,Pool C Team 2,pending
+Pool C,3,17,Pool C Team 1,,,Pool C Team 2,pending
+Pool C,3,18,Pool C Team 3,,,Pool C Team 4,pending

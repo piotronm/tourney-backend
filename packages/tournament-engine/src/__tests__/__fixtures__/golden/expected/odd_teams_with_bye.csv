@@ -1,0 +1,11 @@
+Pool,Round,Match,TeamA,ScoreA,ScoreB,TeamB,Status
+Pool A,1,1,Hawks,,,Owls,pending
+Pool A,1,2,Falcons,,,Ravens,pending
+Pool A,2,3,Eagles,,,Owls,pending
+Pool A,2,4,Hawks,,,Falcons,pending
+Pool A,3,5,Eagles,,,Ravens,pending
+Pool A,3,6,Owls,,,Falcons,pending
+Pool A,4,7,Eagles,,,Falcons,pending
+Pool A,4,8,Ravens,,,Hawks,pending
+Pool A,5,9,Eagles,,,Hawks,pending
+Pool A,5,10,Ravens,,,Owls,pending

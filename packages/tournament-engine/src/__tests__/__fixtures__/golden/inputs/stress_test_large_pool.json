@@ -1,0 +1,25 @@
+{
+  "teams": [
+    { "name": "Team 01" },
+    { "name": "Team 02" },
+    { "name": "Team 03" },
+    { "name": "Team 04" },
+    { "name": "Team 05" },
+    { "name": "Team 06" },
+    { "name": "Team 07" },
+    { "name": "Team 08" },
+    { "name": "Team 09" },
+    { "name": "Team 10" },
+    { "name": "Team 11" },
+    { "name": "Team 12" },
+    { "name": "Team 13" },
+    { "name": "Team 14" },
+    { "name": "Team 15" },
+    { "name": "Team 16" }
+  ],
+  "options": {
+    "seed": 500,
+    "shuffle": false,
+    "poolStrategy": "respect-input"
+  }
+}

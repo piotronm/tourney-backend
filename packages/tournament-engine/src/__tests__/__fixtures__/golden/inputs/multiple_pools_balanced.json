@@ -1,0 +1,18 @@
+{
+  "teams": [
+    { "name": "Alpha" },
+    { "name": "Beta" },
+    { "name": "Gamma" },
+    { "name": "Delta" },
+    { "name": "Epsilon" },
+    { "name": "Zeta" },
+    { "name": "Eta" },
+    { "name": "Theta" }
+  ],
+  "numPools": 2,
+  "options": {
+    "seed": 300,
+    "shuffle": false,
+    "poolStrategy": "balanced"
+  }
+}

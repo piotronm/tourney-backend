@@ -1,0 +1,13 @@
+{
+  "teams": [
+    { "name": "Ace" },
+    { "name": "Bolt" },
+    { "name": "Comet" },
+    { "name": "Dash" }
+  ],
+  "options": {
+    "seed": 999,
+    "shuffle": true,
+    "poolStrategy": "respect-input"
+  }
+}

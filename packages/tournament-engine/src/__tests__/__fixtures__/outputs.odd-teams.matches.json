@@ -1,0 +1,35 @@
+[
+  {
+    "id": 1,
+    "poolId": 1,
+    "round": 1,
+    "matchNumber": 1,
+    "teamAId": 2,
+    "teamBId": 3,
+    "scoreA": null,
+    "scoreB": null,
+    "status": "pending"
+  },
+  {
+    "id": 2,
+    "poolId": 1,
+    "round": 2,
+    "matchNumber": 2,
+    "teamAId": 1,
+    "teamBId": 3,
+    "scoreA": null,
+    "scoreB": null,
+    "status": "pending"
+  },
+  {
+    "id": 3,
+    "poolId": 1,
+    "round": 3,
+    "matchNumber": 3,
+    "teamAId": 1,
+    "teamBId": 2,
+    "scoreA": null,
+    "scoreB": null,
+    "status": "pending"
+  }
+]

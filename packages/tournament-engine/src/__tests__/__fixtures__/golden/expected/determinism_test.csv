@@ -1,0 +1,7 @@
+Pool,Round,Match,TeamA,ScoreA,ScoreB,TeamB,Status
+Pool A,1,1,Ace,,,Dash,pending
+Pool A,1,2,Bolt,,,Comet,pending
+Pool A,2,3,Ace,,,Comet,pending
+Pool A,2,4,Dash,,,Bolt,pending
+Pool A,3,5,Ace,,,Bolt,pending
+Pool A,3,6,Comet,,,Dash,pending
