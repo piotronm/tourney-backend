@@ -8,11 +8,397 @@ Complete reference for all Tournament Backend API endpoints with curl examples.
 
 ## Table of Contents
 
+- [Public API (No Authentication Required)](#public-api-no-authentication-required)
 - [Division Management](#division-management)
 - [Tournament Seeding](#tournament-seeding)
 - [Match Scoring & Standings](#match-scoring--standings)
 - [Export](#export)
 - [Health](#health)
+
+---
+
+## Public API (No Authentication Required)
+
+**New in v0.4.0** - Read-only endpoints for frontend integration.
+
+### Features
+
+- ✅ **Rate Limiting:** 100 requests per minute per IP
+- ✅ **CORS Enabled:** Configured via `CORS_ORIGINS` environment variable
+- ✅ **Caching:** Cache-Control headers (15-30s TTL)
+- ✅ **ETag Support:** 304 Not Modified responses for bandwidth savings
+- ✅ **Validation:** Zod schemas on all endpoints
+- ✅ **Error Handling:** Consistent error responses
+
+### Base URL
+**Production:** `https://api.yourdomain.com/api/public`
+**Development:** `http://localhost:3000/api/public`
+
+**Note:** All endpoints are prefixed with `/api/public`. The public API prefix distinguishes read-only endpoints from admin endpoints.
+
+---
+
+### List Divisions
+
+List all divisions with pagination, search, and statistics.
+
+**Endpoint:** `GET /api/public/divisions`
+
+**Query Parameters:**
+- `limit` (optional): Number of results (default: 20, max: 100)
+- `offset` (optional): Skip N results (default: 0)
+- `search` (optional): Search divisions by name (case-insensitive, partial match)
+
+**Example:**
+```bash
+# List divisions with defaults
+curl http://localhost:3000/api/public/divisions
+
+# With pagination
+curl http://localhost:3000/api/public/divisions?limit=10&offset=0
+
+# With search
+curl http://localhost:3000/api/public/divisions?search=Open
+
+# Check headers (caching, rate limiting)
+curl -I http://localhost:3000/api/public/divisions
+```
+
+**Response (200):**
+```json
+{
+  "data": [
+    {
+      "id": 1,
+      "name": "Mens Open",
+      "createdAt": "2025-10-14T12:00:00.000Z",
+      "stats": {
+        "teams": 8,
+        "pools": 2,
+        "matches": 12,
+        "completedMatches": 5
+      }
+    }
+  ],
+  "meta": {
+    "total": 1,
+    "limit": 20,
+    "offset": 0
+  }
+}
+```
+
+**Headers:**
+```
+Cache-Control: public, max-age=30
+ETag: W/"abc123..."
+Access-Control-Allow-Origin: http://localhost:5173
+```
+
+**Error Responses:**
+- `400 Bad Request` - Invalid query parameters (e.g., limit > 100, negative offset)
+
+---
+
+### Get Division by ID
+
+Get detailed information about a specific division including pools.
+
+**Endpoint:** `GET /api/public/divisions/:id`
+
+**Example:**
+```bash
+curl http://localhost:3000/api/public/divisions/1
+```
+
+**Response (200):**
+```json
+{
+  "id": 1,
+  "name": "Mens Open",
+  "createdAt": "2025-10-14T12:00:00.000Z",
+  "stats": {
+    "teams": 8,
+    "pools": 2,
+    "matches": 12,
+    "completedMatches": 5
+  },
+  "pools": [
+    {
+      "id": 1,
+      "name": "Pool A",
+      "teamCount": 4
+    },
+    {
+      "id": 2,
+      "name": "Pool B",
+      "teamCount": 4
+    }
+  ]
+}
+```
+
+**Headers:**
+```
+Cache-Control: public, max-age=30
+ETag: W/"def456..."
+```
+
+**Error Responses:**
+- `400 Bad Request` - Invalid division ID (non-numeric)
+- `404 Not Found` - Division does not exist
+
+---
+
+### Get Matches
+
+Get matches for a division with optional filters.
+
+**Endpoint:** `GET /api/public/divisions/:id/matches`
+
+**Query Parameters:**
+- `poolId` (optional): Filter by specific pool
+- `status` (optional): Filter by status (`pending` or `completed`)
+- `limit` (optional): Number of results (default: 50, max: 100)
+- `offset` (optional): Skip N results (default: 0)
+
+**Example:**
+```bash
+# All matches
+curl http://localhost:3000/api/public/divisions/1/matches
+
+# Filter by pool
+curl http://localhost:3000/api/public/divisions/1/matches?poolId=1
+
+# Filter by status
+curl http://localhost:3000/api/public/divisions/1/matches?status=completed
+
+# Combine filters
+curl http://localhost:3000/api/public/divisions/1/matches?poolId=1&status=pending&limit=10
+```
+
+**Response (200):**
+```json
+{
+  "data": [
+    {
+      "id": 1,
+      "poolId": 1,
+      "poolName": "Pool A",
+      "roundNumber": 1,
+      "matchNumber": 1,
+      "teamAName": "Team Alpha",
+      "teamBName": "Team Beta",
+      "scoreA": 11,
+      "scoreB": 9,
+      "status": "completed"
+    }
+  ],
+  "meta": {
+    "total": 12,
+    "limit": 50,
+    "offset": 0
+  }
+}
+```
+
+**Headers:**
+```
+Cache-Control: public, max-age=15
+ETag: W/"ghi789..."
+```
+
+**Error Responses:**
+- `400 Bad Request` - Invalid parameters (division ID, poolId, status, limit, offset)
+- `404 Not Found` - Division does not exist
+
+---
+
+### Get Standings
+
+Get live standings for a division with win/loss records and rankings.
+
+**Endpoint:** `GET /api/public/divisions/:id/standings`
+
+**Query Parameters:**
+- `poolId` (optional): Filter standings for a specific pool
+
+**Example:**
+```bash
+# All pools
+curl http://localhost:3000/api/public/divisions/1/standings
+
+# Specific pool
+curl http://localhost:3000/api/public/divisions/1/standings?poolId=1
+```
+
+**Response (200):**
+```json
+{
+  "divisionId": 1,
+  "divisionName": "Mens Open",
+  "pools": [
+    {
+      "poolId": 1,
+      "poolName": "Pool A",
+      "standings": [
+        {
+          "rank": 1,
+          "teamId": 1,
+          "teamName": "Team Alpha",
+          "wins": 3,
+          "losses": 0,
+          "pointsFor": 33,
+          "pointsAgainst": 20,
+          "pointDiff": 13
+        },
+        {
+          "rank": 2,
+          "teamId": 2,
+          "teamName": "Team Beta",
+          "wins": 2,
+          "losses": 1,
+          "pointsFor": 30,
+          "pointsAgainst": 25,
+          "pointDiff": 5
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Headers:**
+```
+Cache-Control: public, max-age=15
+ETag: W/"jkl012..."
+```
+
+**Features:**
+- ✅ Includes teams with 0-0 records (no matches played yet)
+- ✅ Rankings computed by tournament engine (wins → point differential → head-to-head)
+- ✅ Shorter cache TTL (15s) since standings change frequently
+
+**Error Responses:**
+- `400 Bad Request` - Invalid division ID or poolId
+- `404 Not Found` - Division or pool does not exist
+
+---
+
+### Rate Limiting
+
+All public API endpoints are rate limited to **100 requests per minute per IP address**.
+
+**Exemptions:**
+- Localhost (127.0.0.1) - No rate limit
+- `/health` endpoint - No rate limit
+
+**Rate Limit Response (429):**
+```json
+{
+  "statusCode": 429,
+  "error": "Too Many Requests",
+  "message": "Rate limit exceeded. Try again in 45 seconds."
+}
+```
+
+**Testing Rate Limits:**
+```bash
+# This will trigger rate limiting after 100 requests
+for i in {1..105}; do
+  curl http://localhost:3000/api/public/divisions
+done
+```
+
+---
+
+### Caching Strategy
+
+Public API uses HTTP caching for performance:
+
+**Cache TTLs:**
+- **Lists & Details:** 30 seconds (`max-age=30`)
+- **Live Data (standings, matches):** 15 seconds (`max-age=15`)
+
+**ETag Support:**
+All responses include an ETag header. Use conditional requests to save bandwidth:
+
+```bash
+# First request - get ETag
+ETAG=$(curl -s -I http://localhost:3000/api/public/divisions | grep -i etag | cut -d' ' -f2)
+
+# Second request - use If-None-Match
+curl -H "If-None-Match: $ETAG" http://localhost:3000/api/public/divisions
+# Returns 304 Not Modified if content unchanged (no body, ~70% bandwidth savings)
+```
+
+---
+
+### CORS Configuration
+
+CORS is configured via the `CORS_ORIGINS` environment variable.
+
+**Development (automatic):**
+The following origins are automatically allowed in development:
+- `http://localhost:5173` (Vite dev)
+- `http://localhost:5174` (Vite alt port)
+- `http://localhost:3000` (Alternative dev)
+- `http://localhost:4173` (Vite preview)
+
+**Production:**
+Set `CORS_ORIGINS` in your `.env` file:
+```bash
+CORS_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
+```
+
+**Testing CORS:**
+```bash
+curl -H "Origin: http://localhost:5173" \
+     -I http://localhost:3000/api/public/divisions
+# Should include: Access-Control-Allow-Origin: http://localhost:5173
+```
+
+---
+
+### Error Handling
+
+All public API endpoints return consistent error responses:
+
+**400 Bad Request:**
+```json
+{
+  "statusCode": 400,
+  "error": "Bad Request",
+  "message": "Invalid query parameters"
+}
+```
+
+**404 Not Found:**
+```json
+{
+  "statusCode": 404,
+  "error": "Not Found",
+  "message": "Division with ID 999 not found"
+}
+```
+
+**429 Too Many Requests:**
+```json
+{
+  "statusCode": 429,
+  "error": "Too Many Requests",
+  "message": "Rate limit exceeded. Try again in 45 seconds."
+}
+```
+
+**500 Internal Server Error:**
+```json
+{
+  "statusCode": 500,
+  "error": "Internal Server Error",
+  "message": "An unexpected error occurred"
+}
+```
 
 ---
 

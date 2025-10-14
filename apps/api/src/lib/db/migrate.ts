@@ -110,6 +110,13 @@ sqlite.exec(`
   CREATE INDEX IF NOT EXISTS idx_exports_division_id ON exports(division_id);
 `);
 
+// Public API performance indexes (added v0.4.0)
+sqlite.exec(`
+  CREATE INDEX IF NOT EXISTS idx_divisions_created_at ON divisions(created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_matches_status_division_id ON matches(status, division_id);
+  CREATE INDEX IF NOT EXISTS idx_matches_ordering ON matches(division_id, round_number, match_number);
+`);
+
 console.log('✅ Migrations completed successfully!');
 
 sqlite.close();
