@@ -4,6 +4,11 @@ Complete reference for all Tournament Backend API endpoints with curl examples.
 
 **Base URL:** `http://localhost:3000`
 
+## 🔧 Quick Links
+
+- **Interactive API Documentation:** [http://localhost:3000/docs](http://localhost:3000/docs) (development only)
+- **Health Check:** [http://localhost:3000/health](http://localhost:3000/health)
+
 ---
 
 ## Table of Contents

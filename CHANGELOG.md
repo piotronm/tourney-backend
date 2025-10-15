@@ -34,6 +34,12 @@ Production-ready public API with comprehensive testing, performance optimization
   - Two jobs: Full test suite + TypeScript check
   - Node 20.x with pnpm 10
 
+#### OpenAPI/Swagger Documentation 📚
+- **Interactive API Documentation** at `/docs` endpoint (development only)
+- **Auto-generated OpenAPI Spec** with Zod schema integration
+- **Tagged Routes:** Public API routes grouped and documented
+- **Swagger UI:** Full interactive testing interface
+
 #### Operational Improvements 🛠️
 - **Logger Redaction:** Sensitive headers (authorization, cookies) redacted from logs
 - **Rate Limiting:** Automatic exemption for /health endpoint (global: false)
@@ -68,7 +74,8 @@ Production-ready public API with comprehensive testing, performance optimization
 - **Test Data:** Fixed pool creation in tests by using `poolStrategy: 'balanced'`
 
 ### Dependencies
-- No new dependencies added (downgraded existing for compatibility)
+- `@fastify/swagger` ^9.5.2 - OpenAPI spec generation
+- `@fastify/swagger-ui` ^5.2.3 - Interactive API documentation UI
 
 ### Migration Notes
 **Database Migration Required:**
@@ -82,10 +89,11 @@ pnpm run migrate
 None - fully backward compatible with v0.3.0
 
 ### Next Steps (v0.5.0)
-- OpenAPI/Swagger documentation
 - Authentication (JWT/session)
 - User registration/login
 - Protected admin endpoints
+- API key authentication
+- Role-based access control (RBAC)
 
 ---
 
@@ -94,8 +102,8 @@ None - fully backward compatible with v0.3.0
 ### Planned
 - Reduce ESLint warnings (refactor non-null assertions)
 - Add deployment documentation for Railway/Render/Fly.io
-- OpenAPI/Swagger UI for API documentation
-- Authentication system
+- Authentication system (JWT/session-based)
+- PostgreSQL migration for production scale
 
 ---
 

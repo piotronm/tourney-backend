@@ -304,9 +304,14 @@ pnpm dev
 ```bash
 # Check health endpoint
 curl http://localhost:3000/health
+# Expected: {"status":"ok","timestamp":"2025-10-14T..."}
 
-# Expected response:
-# {"status":"ok","timestamp":"2025-10-14T..."}
+# Test public API
+curl http://localhost:3000/api/public/divisions
+# Expected: {"data":[],"meta":{"total":0,"limit":20,"offset":0}}
+
+# View interactive API documentation (in browser)
+open http://localhost:3000/docs
 ```
 
 ### Next Steps
@@ -336,7 +341,9 @@ curl http://localhost:3000/health
 - ✅ **Validated**: Zod schemas on all inputs
 - ✅ **Tested**: 27 comprehensive E2E tests
 
-See [PUBLIC_API_GUIDE.md](backend/PUBLIC_API_GUIDE.md) for detailed documentation.
+**Interactive Documentation:**
+- 📚 **Swagger UI**: [http://localhost:3000/docs](http://localhost:3000/docs) (development only)
+- 📋 **API Reference**: [ENDPOINTS.md](ENDPOINTS.md) - Complete curl examples
 
 ### Division Management (v0.3.0)
 
