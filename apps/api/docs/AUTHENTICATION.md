@@ -1,0 +1,535 @@
+# Authentication System
+
+**Last Updated:** 2025-10-15
+
+## Overview
+
+Tournament Manager uses **Google OAuth 2.0 with OpenID Connect** for authentication. This provides a secure, password-less authentication system that leverages Google's authentication infrastructure.
+
+## Architecture
+
+### Components
+
+1. **Google OAuth 2.0** - External authentication provider
+2. **Database Sessions** - Session storage in SQLite
+3. **Cookie-based Auth** - HttpOnly cookies for session management
+4. **Role-based Access Control (RBAC)** - Admin/Organizer/Viewer roles
+
+### Database Tables
+
+#### users
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | INTEGER | Primary key (auto-increment) |
+| google_id | TEXT | Google user ID (unique) |
+| email | TEXT | User email from Google (unique) |
+| name | TEXT | Display name |
+| picture | TEXT | Profile picture URL |
+| role | TEXT | User role: 'admin', 'organizer', or 'viewer' |
+| created_at | TEXT | Account creation timestamp |
+| updated_at | TEXT | Last update timestamp |
+| last_login_at | TEXT | Last login timestamp |
+
+#### sessions
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | TEXT | Session ID (primary key) |
+| user_id | INTEGER | Foreign key to users.id |
+| expires_at | INTEGER | Unix timestamp for expiration |
+| created_at | TEXT | Session creation timestamp |
+
+---
+
+## OAuth Flow
+
+```
+1. User clicks "Sign in with Google" → Frontend redirects to /api/auth/google
+                                   ↓
+2. Backend generates CSRF state → Redirects to Google authorization URL
+                                   ↓
+3. User authenticates with Google → Grants permissions
+                                   ↓
+4. Google redirects to /api/auth/google/callback → With authorization code
+                                   ↓
+5. Backend exchanges code for tokens → Validates ID token
+                                   ↓
+6. Backend creates/updates user → Creates session
+                                   ↓
+7. Backend sets session cookie → Redirects to frontend
+                                   ↓
+8. Frontend makes authenticated requests → Cookie included automatically
+```
+
+---
+
+## API Endpoints
+
+### Authentication Endpoints
+
+#### GET /api/auth/google
+
+**Initiates OAuth flow**
+
+Redirects to Google authorization page.
+
+**Query Parameters:** None
+**Cookies Set:** `oauth_state` (5-minute CSRF protection)
+**Response:** 302 Redirect to Google
+
+**Example:**
+```bash
+# Production
+curl -L https://api.bracketiq.win/api/auth/google
+
+# Development
+curl -L http://localhost:3000/api/auth/google
+```
+
+---
+
+#### GET /api/auth/google/callback
+
+**OAuth callback endpoint**
+
+Processes Google's response and creates session.
+
+**Query Parameters:**
+- `code` - Authorization code from Google
+- `state` - CSRF token (must match cookie)
+- `error` - Error code (if OAuth failed)
+- `error_description` - Error details
+
+**Cookies Set:** `sid` (session ID, 30 days)
+**Response:** 302 Redirect to frontend
+
+**On Success:** Redirects to `FRONTEND_URL/`
+**On Error:** Redirects to `FRONTEND_URL/login?error=...`
+
+---
+
+#### GET /api/auth/me
+
+**Get current authenticated user**
+
+Returns user profile information.
+
+**Authentication:** Required (session cookie)
+**Response:** 200 OK
+
+```json
+{
+  "user": {
+    "id": 1,
+    "email": "user@example.com",
+    "name": "John Doe",
+    "picture": "https://lh3.googleusercontent.com/...",
+    "role": "admin"
+  }
+}
+```
+
+**Error Responses:**
+- `401 Unauthorized` - No session cookie or invalid session
+
+**Example:**
+```bash
+# Production
+curl -b "sid=session_token_here" https://api.bracketiq.win/api/auth/me
+
+# Development
+curl -b "sid=session_token_here" http://localhost:3000/api/auth/me
+```
+
+---
+
+#### POST /api/auth/logout
+
+**Logout current user**
+
+Destroys session and clears cookie.
+
+**Authentication:** Required (session cookie)
+**Query Parameters:**
+- `redirect` (optional) - URL to redirect to after logout
+
+**Response:**
+- JSON: `200 OK` with `{ "message": "Logged out successfully" }`
+- OR Redirect: `302` if `?redirect=` specified
+
+**Example:**
+```bash
+# Production - API logout (returns JSON)
+curl -X POST -b "sid=session_token" https://api.bracketiq.win/api/auth/logout
+
+# Production - Browser logout (redirects)
+curl -X POST -b "sid=session_token" \
+  "https://api.bracketiq.win/api/auth/logout?redirect=/login"
+
+# Development
+curl -X POST -b "sid=session_token" http://localhost:3000/api/auth/logout
+```
+
+---
+
+## Authorization
+
+### Roles
+
+| Role | Permissions |
+|------|-------------|
+| **admin** | Full access to all endpoints, can create/modify/delete divisions |
+| **organizer** | Can manage tournaments (future feature) |
+| **viewer** | Read-only access to public endpoints |
+
+### First User Bootstrap
+
+**The first user to log in automatically receives admin role.**
+
+This allows easy setup:
+1. Deploy application
+2. First person logs in → becomes admin
+3. Admin can manage permissions for other users
+
+### Protecting Endpoints
+
+Use middleware in route handlers:
+
+```typescript
+import { requireAuth, requireAdmin } from '../middleware/auth.js';
+
+// Require authentication only
+fastify.get('/protected', {
+  preHandler: requireAuth,
+}, async (request, reply) => {
+  // request.user is available
+  return { user: request.user };
+});
+
+// Require admin role
+fastify.post('/admin-only', {
+  preHandler: [requireAuth, requireAdmin],
+}, async (request, reply) => {
+  // Only admins can access
+  return { success: true };
+});
+```
+
+### Currently Protected Endpoints
+
+All write operations require admin authentication:
+
+- `POST /api/divisions` - Create division
+- `PUT /api/divisions/:id` - Update division
+- `DELETE /api/divisions/:id` - Delete division
+- `POST /api/divisions/:id/seed` - Seed tournament
+- `POST /api/divisions/:id/seed-dupr` - Seed with DUPR players
+- `PUT /api/matches/:id/score` - Update match score
+
+Read operations (`GET`) are public via `/api/public/*` endpoints.
+
+---
+
+## Session Management
+
+### Session Lifecycle
+
+1. **Creation:** On successful OAuth login
+2. **Duration:** 30 days from creation
+3. **Storage:** SQLite database (sessions table)
+4. **Cookie:** HttpOnly, SameSite=Lax, Secure in production
+
+### Session Security
+
+- **Random IDs:** Cryptographically secure (32 bytes, base64url)
+- **Expiration:** Automatic cleanup on validation
+- **HttpOnly:** Not accessible via JavaScript (XSS protection)
+- **SameSite:** CSRF protection
+- **Secure Flag:** HTTPS-only in production
+
+### Session Cleanup
+
+Expired sessions are automatically deleted when validated. For periodic cleanup:
+
+```typescript
+import { cleanupExpiredSessions } from './lib/auth/sessions.js';
+
+// Run cleanup (returns number of deleted sessions)
+const deleted = await cleanupExpiredSessions();
+console.log(`Cleaned up ${deleted} expired sessions`);
+```
+
+**Recommendation:** Run cleanup daily via cron job.
+
+---
+
+## Environment Variables
+
+Required for authentication:
+
+```bash
+# Google OAuth Credentials
+GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com"
+GOOGLE_CLIENT_SECRET="your-client-secret"
+
+# Production (Cloudflare Tunnel)
+GOOGLE_REDIRECT_URI="https://api.bracketiq.win/api/auth/google/callback"
+FRONTEND_URL="https://bracketiq.win"
+
+# Development (Localhost)
+# GOOGLE_REDIRECT_URI="http://localhost:3000/api/auth/google/callback"
+# FRONTEND_URL="http://localhost:5173"
+
+# Session Secret (reserved for future HMAC signing)
+SESSION_SECRET="generate-a-random-32-char-string-here"
+
+# Environment
+NODE_ENV="development"  # Use "production" for production
+```
+
+### Getting Google OAuth Credentials
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create project or select existing one
+3. Enable **Google+ API**
+4. Navigate to **Credentials** → **Create Credentials** → **OAuth 2.0 Client ID**
+5. Application type: **Web application**
+6. Authorized redirect URIs:
+   - Production: `https://api.bracketiq.win/api/auth/google/callback`
+   - Development: `http://localhost:3000/api/auth/google/callback`
+7. Copy **Client ID** and **Client Secret** to `.env` file
+
+### OAuth Consent Screen
+
+Configure at: **APIs & Services** → **OAuth consent screen**
+
+- **User Type:**
+  - **Internal** - Only your organization (Google Workspace only)
+  - **External** - Any Google account (requires verification for prod)
+- **Scopes:** Select `openid`, `email`, `profile`
+- **Test Users:** Add test emails during development
+
+---
+
+## Security
+
+### Implemented Protections
+
+✅ **CSRF Protection** - State parameter verification
+✅ **XSS Protection** - HttpOnly cookies
+✅ **SQL Injection** - Parameterized queries (Drizzle ORM)
+✅ **Session Fixation** - Random session IDs
+✅ **Email Verification** - Only verified Google emails allowed
+✅ **Token Validation** - ID token issuer and audience checks
+
+### Production Recommendations
+
+#### 1. ID Token Signature Verification
+
+Current implementation decodes ID tokens but doesn't verify signatures. For production:
+
+```bash
+pnpm add google-auth-library
+```
+
+```typescript
+import { OAuth2Client } from 'google-auth-library';
+
+const client = new OAuth2Client(env.GOOGLE_CLIENT_ID);
+const ticket = await client.verifyIdToken({
+  idToken: tokens.id_token,
+  audience: env.GOOGLE_CLIENT_ID,
+});
+const payload = ticket.getPayload();
+```
+
+#### 2. Consider openid-client Library
+
+For better OAuth support:
+
+```bash
+pnpm add openid-client
+```
+
+Benefits:
+- Automatic discovery and validation
+- Handles key rotation
+- Supports multiple providers
+- Better maintained
+
+#### 3. Enable HTTPS
+
+```typescript
+// Update cookie settings for production
+reply.setCookie('sid', sessionId, {
+  httpOnly: true,
+  secure: true,  // HTTPS only
+  sameSite: 'strict',  // Stricter CSRF protection
+  path: '/',
+  maxAge: 30 * 24 * 60 * 60,
+});
+```
+
+#### 4. Rate Limiting
+
+Add to auth endpoints:
+
+```typescript
+await fastify.register(rateLimit, {
+  max: 10,  // 10 attempts
+  timeWindow: '15 minutes',
+});
+```
+
+#### 5. Audit Logging
+
+Log all authentication events:
+- Login attempts (success/failure)
+- Session creation/deletion
+- Permission changes
+- Failed authorization attempts
+
+---
+
+## Testing
+
+### Manual Testing
+
+1. **Start backend:**
+```bash
+cd backend/apps/api
+pnpm dev
+```
+
+2. **Test OAuth flow:**
+```bash
+# Production
+open https://api.bracketiq.win/api/auth/google
+
+# Development
+open http://localhost:3000/api/auth/google
+```
+
+3. **Test authenticated endpoint:**
+```bash
+# Get session cookie from browser DevTools after login
+# Production
+curl -b "sid=YOUR_SESSION_TOKEN" https://api.bracketiq.win/api/auth/me
+
+# Development
+curl -b "sid=YOUR_SESSION_TOKEN" http://localhost:3000/api/auth/me
+```
+
+### Automated Tests
+
+Test file: `/home/piouser/eztourneyz/backend/apps/api/src/__tests__/e2e.auth.spec.ts`
+
+```bash
+# Run auth tests
+pnpm test e2e.auth
+
+# Run all tests
+pnpm test
+```
+
+**Note:** Tests require database setup. See test file for setup instructions.
+
+---
+
+## Troubleshooting
+
+### "redirect_uri_mismatch" error
+
+**Cause:** Redirect URI in Google Console doesn't match `GOOGLE_REDIRECT_URI` in `.env`
+
+**Solution:** Ensure exact match including protocol, domain, port, and path.
+
+### Sessions not persisting
+
+**Cause:** Cookie settings incompatible with environment
+
+**Solution:**
+- Development: Check `sameSite: 'lax'` and `secure: false`
+- Production: Ensure HTTPS enabled and `secure: true`
+
+### 401 on protected endpoints
+
+**Cause:** Session cookie not being sent or session expired
+
+**Solution:**
+1. Check cookie in browser DevTools (Application → Cookies)
+2. Verify session exists in database: `SELECT * FROM sessions WHERE id = 'your_session_id';`
+3. Check session expiration: `expires_at` should be > current Unix timestamp
+
+### CORS errors
+
+**Cause:** Frontend origin not in CORS whitelist
+
+**Solution:** Add frontend URL to CORS configuration in `server.ts` or `CORS_ORIGINS` env var
+
+### "Email not verified" error
+
+**Cause:** Google account email not verified
+
+**Solution:** User must verify email with Google first
+
+---
+
+## Migration from Development to Production
+
+### Checklist
+
+- [ ] Set up production Google OAuth credentials
+- [ ] Update `GOOGLE_REDIRECT_URI` to production URL
+- [ ] Set `NODE_ENV=production`
+- [ ] Enable HTTPS
+- [ ] Update cookie `secure` flag to `true`
+- [ ] Add production `FRONTEND_URL`
+- [ ] Implement ID token signature verification
+- [ ] Add rate limiting to auth endpoints
+- [ ] Set up session cleanup cron job
+- [ ] Enable audit logging
+- [ ] Configure monitoring/alerts
+- [ ] Test OAuth flow in production environment
+
+### Environment Variables for Production
+
+```bash
+NODE_ENV=production
+GOOGLE_CLIENT_ID=production-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=production-secret
+GOOGLE_REDIRECT_URI=https://yourdomain.com/api/auth/google/callback
+SESSION_SECRET=generate-new-32-char-secret-for-production
+FRONTEND_URL=https://yourdomain.com
+DATABASE_URL=file:./production.db
+CORS_ORIGINS=https://yourdomain.com
+```
+
+---
+
+## Resources
+
+- [Google OAuth 2.0 Documentation](https://developers.google.com/identity/protocols/oauth2)
+- [OpenID Connect Spec](https://openid.net/specs/openid-connect-core-1_0.html)
+- [Fastify Authentication](https://fastify.dev/docs/latest/Guides/Getting-Started/#authentication)
+- [OWASP Session Management](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)
+
+---
+
+## Support
+
+For questions or issues:
+1. Check this documentation
+2. Review implementation files:
+   - [auth.ts](../src/routes/auth.ts) - Auth routes
+   - [sessions.ts](../src/lib/auth/sessions.ts) - Session management
+   - [google.ts](../src/lib/auth/google.ts) - OAuth utilities
+   - [middleware/auth.ts](../src/middleware/auth.ts) - Auth middleware
+3. Check existing tests
+4. Review authentication implementation plan
+
+---
+
+**Last Updated:** 2025-10-15
+**Version:** 1.0.0

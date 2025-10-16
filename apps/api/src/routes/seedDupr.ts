@@ -18,6 +18,7 @@ import {
   type RoundRobinMatch,
   type CourtAssignment as EngineCourtAssignment,
 } from 'tournament-engine';
+import { requireAuth, requireAdmin } from '../middleware/auth.js';
 
 /**
  * Request body schema for DUPR-based seeding.
@@ -67,7 +68,9 @@ const seedDuprRoute: FastifyPluginAsync = async (fastify) => {
   fastify.post<{
     Params: { id: number };
     Body: z.infer<typeof seedDuprBodySchema>;
-  }>('/divisions/:id/seed-dupr', async (request, reply) => {
+  }>('/divisions/:id/seed-dupr', {
+    preHandler: [requireAuth, requireAdmin],
+  }, async (request, reply) => {
     // Validate parameters
     const paramsResult = paramsSchema.safeParse(request.params);
     if (!paramsResult.success) {

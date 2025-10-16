@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { db } from '../lib/db/drizzle.js';
 import { matches } from '../lib/db/schema.js';
 import { computePoolStandings } from 'tournament-engine';
+import { requireAuth, requireAdmin } from '../middleware/auth.js';
 
 /**
  * URL parameters schema.
@@ -30,7 +31,9 @@ const scoreMatchRoute: FastifyPluginAsync = async (fastify) => {
   fastify.put<{
     Params: { id: number };
     Body: z.infer<typeof scoreBodySchema>;
-  }>('/matches/:id/score', async (request, reply) => {
+  }>('/matches/:id/score', {
+    preHandler: [requireAuth, requireAdmin],
+  }, async (request, reply) => {
     // Validate parameters
     const paramsResult = paramsSchema.safeParse(request.params);
     if (!paramsResult.success) {

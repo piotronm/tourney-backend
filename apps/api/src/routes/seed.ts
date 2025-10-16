@@ -16,6 +16,7 @@ import {
   type InputTeam,
   type RoundRobinMatch,
 } from 'tournament-engine';
+import { requireAuth, requireAdmin } from '../middleware/auth.js';
 
 /**
  * Request body schema for seeding a tournament.
@@ -51,7 +52,9 @@ const seedRoute: FastifyPluginAsync = async (fastify) => {
   fastify.post<{
     Params: { id: number };
     Body: z.infer<typeof seedBodySchema>;
-  }>('/divisions/:id/seed', async (request, reply) => {
+  }>('/divisions/:id/seed', {
+    preHandler: [requireAuth, requireAdmin],
+  }, async (request, reply) => {
     // Validate parameters
     const paramsResult = paramsSchema.safeParse(request.params);
     if (!paramsResult.success) {

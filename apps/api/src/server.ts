@@ -6,6 +6,7 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
+import cookie from '@fastify/cookie';
 import { env } from './env.js';
 import { closeDatabase } from './lib/db/drizzle.js';
 import healthRoute from './routes/health.js';
@@ -17,6 +18,7 @@ import scoreMatchRoute from './routes/scoreMatch.js';
 import standingsRoute from './routes/standings.js';
 import divisionsRoutes from './routes/divisions.js';
 import publicRoutes from './routes/public.js';
+import authRoutes from './routes/auth.js';
 
 /**
  * Create and configure Fastify server instance.
@@ -62,7 +64,10 @@ async function bootstrap() {
       'http://localhost:5173', // Vite dev
       'http://localhost:5174', // Vite alt port
       'http://localhost:3000', // Alternative dev
-      'http://localhost:4173'  // Vite preview
+      'http://localhost:4173', // Vite preview
+      'http://100.125.100.17:5173', // Tailscale remote access
+      'https://bracketiq.win', // Cloudflare Tunnel - Frontend
+      'https://api.bracketiq.win' // Cloudflare Tunnel - API
     );
   }
 
@@ -132,6 +137,11 @@ async function bootstrap() {
 
   fastify.log.info('Sensible plugin registered (error helpers)');
 
+  // Cookie support (required for session cookies)
+  await fastify.register(cookie);
+
+  fastify.log.info('Cookie support enabled for authentication');
+
   // Register error handler
   fastify.setErrorHandler((error, request, reply) => {
     fastify.log.error({
@@ -154,6 +164,7 @@ async function bootstrap() {
 
   // Register routes
   await fastify.register(healthRoute);
+  await fastify.register(authRoutes, { prefix: '/api' });
   await fastify.register(divisionsRoutes, { prefix: '/api' });
   await fastify.register(seedRoute, { prefix: '/api' });
   await fastify.register(seedDuprRoute, { prefix: '/api' });

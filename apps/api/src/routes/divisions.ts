@@ -8,6 +8,7 @@ import { eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../lib/db/drizzle.js';
 import { divisions, teams, pools, matches, players, court_assignments } from '../lib/db/schema.js';
+import { requireAuth, requireAdmin } from '../middleware/auth.js';
 
 /**
  * Create division schema.
@@ -43,7 +44,9 @@ const divisionsRoutes: FastifyPluginAsync = async (fastify) => {
   // CREATE Division
   fastify.post<{
     Body: z.infer<typeof createDivisionSchema>;
-  }>('/divisions', async (request, reply) => {
+  }>('/divisions', {
+    preHandler: [requireAuth, requireAdmin],
+  }, async (request, reply) => {
     // Validate body
     const bodyResult = createDivisionSchema.safeParse(request.body);
     if (!bodyResult.success) {
@@ -173,7 +176,9 @@ const divisionsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.put<{
     Params: { id: number };
     Body: z.infer<typeof updateDivisionSchema>;
-  }>('/divisions/:id', async (request, reply) => {
+  }>('/divisions/:id', {
+    preHandler: [requireAuth, requireAdmin],
+  }, async (request, reply) => {
     // Validate parameters
     const paramsResult = divisionParamsSchema.safeParse(request.params);
     if (!paramsResult.success) {
@@ -229,7 +234,9 @@ const divisionsRoutes: FastifyPluginAsync = async (fastify) => {
   // DELETE Division
   fastify.delete<{
     Params: { id: number };
-  }>('/divisions/:id', async (request, reply) => {
+  }>('/divisions/:id', {
+    preHandler: [requireAuth, requireAdmin],
+  }, async (request, reply) => {
     // Validate parameters
     const paramsResult = divisionParamsSchema.safeParse(request.params);
     if (!paramsResult.success) {

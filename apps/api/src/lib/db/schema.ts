@@ -114,6 +114,41 @@ export const exports = sqliteTable('exports', {
 });
 
 /**
+ * Users table.
+ * Stores user information from Google OAuth.
+ */
+export const users = sqliteTable('users', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+
+  // Google OAuth fields
+  google_id: text('google_id').notNull().unique(), // Google's user ID
+  email: text('email').notNull().unique(),
+  name: text('name'),
+  picture: text('picture'), // Profile picture URL from Google
+
+  // Authorization
+  role: text('role', { enum: ['admin', 'organizer', 'viewer'] })
+    .notNull()
+    .default('viewer'),
+
+  // Timestamps
+  created_at: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  updated_at: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  last_login_at: text('last_login_at'),
+});
+
+/**
+ * Sessions table.
+ * Stores user sessions for authentication.
+ */
+export const sessions = sqliteTable('sessions', {
+  id: text('id').primaryKey(), // Session ID (random UUID)
+  user_id: integer('user_id').notNull(), // FK to users.id
+  expires_at: integer('expires_at').notNull(), // Unix timestamp
+  created_at: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+/**
  * Type exports for use in application code.
  */
 export type Division = typeof divisions.$inferSelect;
@@ -136,3 +171,9 @@ export type NewCourtAssignment = typeof court_assignments.$inferInsert;
 
 export type Export = typeof exports.$inferSelect;
 export type NewExport = typeof exports.$inferInsert;
+
+export type User = typeof users.$inferSelect;
+export type NewUser = typeof users.$inferInsert;
+
+export type Session = typeof sessions.$inferSelect;
+export type NewSession = typeof sessions.$inferInsert;

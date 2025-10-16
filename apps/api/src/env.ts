@@ -18,6 +18,17 @@ const envSchema = z.object({
     .default('development'),
   PORT: z.coerce.number().default(3000),
   DATABASE_URL: z.string().default('file:./dev.db'),
+
+  // Google OAuth (optional for deployments without auth)
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_REDIRECT_URI: z.string().optional(),
+
+  // Session (optional for deployments without auth)
+  SESSION_SECRET: z.string().optional(),
+
+  // Frontend (optional)
+  FRONTEND_URL: z.string().optional(),
 });
 
 /**
