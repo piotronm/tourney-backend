@@ -27,7 +27,11 @@ export const teams = sqliteTable('teams', {
   division_id: integer('division_id').notNull(),
   pool_id: integer('pool_id'),
   name: text('name').notNull(),
+  pool_seed: integer('pool_seed'), // Team ranking within pool
   created_at: text('created_at')
+    .notNull()
+    .default(sql`CURRENT_TIMESTAMP`),
+  updated_at: text('updated_at')
     .notNull()
     .default(sql`CURRENT_TIMESTAMP`),
 });

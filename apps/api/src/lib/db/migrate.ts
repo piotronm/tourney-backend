@@ -31,8 +31,35 @@ sqlite.exec(`
     division_id INTEGER NOT NULL,
     pool_id INTEGER,
     name TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    pool_seed INTEGER,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
+`);
+
+// Add pool_seed and updated_at columns if they don't exist (migration for existing databases)
+try {
+  sqlite.exec(`ALTER TABLE teams ADD COLUMN pool_seed INTEGER;`);
+  console.log('✅ Added pool_seed column to teams table');
+} catch (e) {
+  // Column already exists, ignore
+}
+
+try {
+  sqlite.exec(`ALTER TABLE teams ADD COLUMN updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP;`);
+  console.log('✅ Added updated_at column to teams table');
+} catch (e) {
+  // Column already exists, ignore
+}
+
+// Create trigger to auto-update updated_at
+sqlite.exec(`
+  CREATE TRIGGER IF NOT EXISTS teams_updated_at_trigger
+  AFTER UPDATE ON teams
+  FOR EACH ROW
+  BEGIN
+    UPDATE teams SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+  END;
 `);
 
 // Create pools table

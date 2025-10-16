@@ -5,7 +5,7 @@
 
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { eq, sql, desc, and } from 'drizzle-orm';
+import { eq, sql, desc, and, like } from 'drizzle-orm';
 import { db } from '../lib/db/drizzle.js';
 import { divisions, teams, pools, matches } from '../lib/db/schema.js';
 import { computePoolStandings } from 'tournament-engine';
@@ -46,6 +46,18 @@ const matchesQuerySchema = z.object({
   status: z.enum(['pending', 'completed']).optional(),
   limit: z.coerce.number().int().positive().max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),
+});
+
+const listTeamsQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(100).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+  search: z.string().optional(),
+  poolId: z.coerce.number().int().positive().optional(),
+});
+
+const teamParamsSchema = z.object({
+  divisionId: z.coerce.number().int().positive(),
+  teamId: z.coerce.number().int().positive(),
 });
 
 // ============================================
@@ -467,6 +479,160 @@ const publicRoutes: FastifyPluginAsync = async (fastify) => {
         });
       } catch (error) {
         fastify.log.error({ error, divisionId }, 'Error fetching matches');
+        throw error;
+      }
+    }
+  );
+
+  // ============================================
+  // GET /api/public/divisions/:divisionId/teams
+  // List teams in a division (public read-only)
+  // ============================================
+  fastify.get<{
+    Params: { divisionId: string };
+    Querystring: z.infer<typeof listTeamsQuerySchema>;
+  }>(
+    '/divisions/:divisionId/teams',
+    {
+      ...rateLimitConfig,
+    },
+    async (request, reply) => {
+      const divisionId = Number(request.params.divisionId);
+      const queryResult = listTeamsQuerySchema.safeParse(request.query);
+
+      if (!queryResult.success || isNaN(divisionId)) {
+        return reply.badRequest('Invalid parameters');
+      }
+
+      const { limit, offset, search, poolId } = queryResult.data;
+
+      try {
+        // Build conditions
+        const conditions = [eq(teams.division_id, divisionId)];
+
+        if (search) {
+          conditions.push(like(teams.name, `%${search}%`));
+        }
+
+        if (poolId) {
+          conditions.push(eq(teams.pool_id, poolId));
+        }
+
+        // Get teams with pool names
+        const teamsList = await db
+          .select({
+            id: teams.id,
+            division_id: teams.division_id,
+            name: teams.name,
+            pool_id: teams.pool_id,
+            pool_seed: teams.pool_seed,
+            created_at: teams.created_at,
+            updated_at: teams.updated_at,
+            pool_name: pools.name,
+          })
+          .from(teams)
+          .leftJoin(pools, eq(teams.pool_id, pools.id))
+          .where(and(...conditions))
+          .orderBy(desc(teams.created_at))
+          .limit(limit)
+          .offset(offset);
+
+        // Get total count
+        const countResult = await db
+          .select({ count: sql<number>`count(*)` })
+          .from(teams)
+          .where(and(...conditions));
+
+        const total = countResult[0]?.count || 0;
+
+        // Format response
+        const formattedTeams = teamsList.map(t => ({
+          id: t.id,
+          divisionId: t.division_id,
+          name: t.name,
+          poolId: t.pool_id,
+          poolName: t.pool_name,
+          poolSeed: t.pool_seed,
+          createdAt: serializeDate(t.created_at),
+          updatedAt: serializeDate(t.updated_at),
+        }));
+
+        return reply.send({
+          data: formattedTeams,
+          meta: {
+            total: Number(total),
+            limit,
+            offset,
+          },
+        });
+      } catch (error) {
+        fastify.log.error({ error, divisionId }, 'Error fetching teams');
+        throw error;
+      }
+    }
+  );
+
+  // ============================================
+  // GET /api/public/divisions/:divisionId/teams/:teamId
+  // Get single team (public read-only)
+  // ============================================
+  fastify.get<{
+    Params: z.infer<typeof teamParamsSchema>;
+  }>(
+    '/divisions/:divisionId/teams/:teamId',
+    {
+      ...rateLimitConfig,
+    },
+    async (request, reply) => {
+      const paramsResult = teamParamsSchema.safeParse(request.params);
+
+      if (!paramsResult.success) {
+        return reply.badRequest('Invalid parameters');
+      }
+
+      const { divisionId, teamId } = paramsResult.data;
+
+      try {
+        // Get team with pool name
+        const result = await db
+          .select({
+            id: teams.id,
+            division_id: teams.division_id,
+            name: teams.name,
+            pool_id: teams.pool_id,
+            pool_seed: teams.pool_seed,
+            created_at: teams.created_at,
+            updated_at: teams.updated_at,
+            pool_name: pools.name,
+          })
+          .from(teams)
+          .leftJoin(pools, eq(teams.pool_id, pools.id))
+          .where(and(
+            eq(teams.id, teamId),
+            eq(teams.division_id, divisionId)
+          ))
+          .limit(1);
+
+        if (result.length === 0) {
+          return reply.notFound('Team not found');
+        }
+
+        const team = result[0]!;
+
+        return reply.send({
+          data: {
+            id: team.id,
+            divisionId: team.division_id,
+            name: team.name,
+            poolId: team.pool_id,
+            poolName: team.pool_name,
+            poolSeed: team.pool_seed,
+            createdAt: serializeDate(team.created_at),
+            updatedAt: serializeDate(team.updated_at),
+          },
+        });
+      } catch (error) {
+        fastify.log.error({ error, divisionId, teamId }, 'Error fetching team');
         throw error;
       }
     }

@@ -17,6 +17,7 @@ import exportExcelRoute from './routes/exportExcel.js';
 import scoreMatchRoute from './routes/scoreMatch.js';
 import standingsRoute from './routes/standings.js';
 import divisionsRoutes from './routes/divisions.js';
+import teamsRoutes from './routes/teams.js';
 import publicRoutes from './routes/public.js';
 import authRoutes from './routes/auth.js';
 
@@ -166,6 +167,7 @@ async function bootstrap() {
   await fastify.register(healthRoute);
   await fastify.register(authRoutes, { prefix: '/api' });
   await fastify.register(divisionsRoutes, { prefix: '/api' });
+  await fastify.register(teamsRoutes, { prefix: '/api' });
   await fastify.register(seedRoute, { prefix: '/api' });
   await fastify.register(seedDuprRoute, { prefix: '/api' });
   await fastify.register(exportCsvRoute, { prefix: '/api' });
