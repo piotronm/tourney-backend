@@ -296,6 +296,157 @@ const divisionsRoutes: FastifyPluginAsync = async (fastify) => {
       throw error;
     }
   });
+
+  // ============================================
+  // MATCH GENERATION ENDPOINT
+  // ============================================
+
+  /**
+   * Generate matches schema.
+   */
+  const generateMatchesSchema = z.object({
+    format: z.enum(['ROUND_ROBIN', 'SINGLE_ELIM', 'DOUBLE_ELIM'], {
+      errorMap: () => ({ message: 'Format must be ROUND_ROBIN, SINGLE_ELIM, or DOUBLE_ELIM' }),
+    }),
+  });
+
+  // GENERATE Matches for Division
+  fastify.post<{
+    Params: { divisionId: number };
+    Body: z.infer<typeof generateMatchesSchema>;
+  }>('/divisions/:divisionId/generate-matches', {
+    preHandler: [requireAuth, requireAdmin],
+  }, async (request, reply) => {
+    const divisionId = Number(request.params.divisionId);
+
+    if (isNaN(divisionId)) {
+      return reply.status(400).send({
+        error: 'Invalid division ID',
+      });
+    }
+
+    // Validate body
+    const bodyResult = generateMatchesSchema.safeParse(request.body);
+    if (!bodyResult.success) {
+      return reply.status(400).send({
+        error: 'Invalid request body',
+        details: bodyResult.error.flatten(),
+      });
+    }
+
+    const { format } = bodyResult.data;
+
+    // Only Round Robin supported for now
+    if (format !== 'ROUND_ROBIN') {
+      return reply.status(400).send({
+        error: 'Not Implemented',
+        message: `${format} format not yet implemented. Use ROUND_ROBIN.`,
+      });
+    }
+
+    try {
+      // Verify division exists
+      const division = await db
+        .select()
+        .from(divisions)
+        .where(eq(divisions.id, divisionId))
+        .limit(1)
+        .then((rows) => rows[0]);
+
+      if (!division) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: `Division with ID ${divisionId} not found`,
+        });
+      }
+
+      // Get all pools for this division
+      const divisionPools = await db
+        .select()
+        .from(pools)
+        .where(eq(pools.division_id, divisionId))
+        .orderBy(pools.order_index);
+
+      if (divisionPools.length === 0) {
+        return reply.status(400).send({
+          error: 'No pools found',
+          message: 'No pools found for this division. Create pools first.',
+        });
+      }
+
+      // Delete existing pending matches for this division
+      await db.delete(matches).where(eq(matches.division_id, divisionId));
+
+      const allMatches: any[] = [];
+
+      // Generate matches for each pool
+      for (const pool of divisionPools) {
+        // Get teams in this pool
+        const poolTeams = await db
+          .select()
+          .from(teams)
+          .where(eq(teams.pool_id, pool.id))
+          .orderBy(teams.pool_seed);
+
+        // Skip pools with less than 2 teams
+        if (poolTeams.length < 2) {
+          fastify.log.info({ poolId: pool.id, teamCount: poolTeams.length }, 'Skipping pool with insufficient teams');
+          continue;
+        }
+
+        // Generate round-robin matches for this pool
+        let matchNumber = 1;
+        for (let i = 0; i < poolTeams.length; i++) {
+          for (let j = i + 1; j < poolTeams.length; j++) {
+            const teamA = poolTeams[i];
+            const teamB = poolTeams[j];
+
+            if (!teamA || !teamB) {
+              continue;
+            }
+
+            const match = {
+              division_id: divisionId,
+              pool_id: pool.id,
+              round_number: Math.floor((matchNumber - 1) / Math.max(1, Math.floor(poolTeams.length / 2))) + 1,
+              match_number: matchNumber,
+              team_a_id: teamA.id,
+              team_b_id: teamB.id,
+              score_a: null,
+              score_b: null,
+              status: 'pending' as const,
+            };
+            allMatches.push(match);
+            matchNumber++;
+          }
+        }
+      }
+
+      if (allMatches.length === 0) {
+        return reply.status(400).send({
+          error: 'No matches generated',
+          message: 'No matches generated. Ensure pools have at least 2 teams each.',
+        });
+      }
+
+      // Insert all matches
+      const insertedMatches = await db
+        .insert(matches)
+        .values(allMatches)
+        .returning();
+
+      fastify.log.info({ divisionId, count: insertedMatches.length }, 'Matches generated successfully');
+
+      return reply.status(201).send({
+        matches: insertedMatches,
+        count: insertedMatches.length,
+      });
+    } catch (error) {
+      fastify.log.error({ error, divisionId }, 'Error generating matches');
+      throw error;
+    }
+  });
+
   // ============================================
   // POOL MANAGEMENT ENDPOINTS
   // ============================================
