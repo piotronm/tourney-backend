@@ -44,7 +44,12 @@ export const pools = sqliteTable('pools', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   division_id: integer('division_id').notNull(),
   name: text('name').notNull(),
+  label: text('label').notNull(), // Single letter identifier (A, B, C, etc.)
+  order_index: integer('order_index').notNull(), // Display order
   created_at: text('created_at')
+    .notNull()
+    .default(sql`CURRENT_TIMESTAMP`),
+  updated_at: text('updated_at')
     .notNull()
     .default(sql`CURRENT_TIMESTAMP`),
 });

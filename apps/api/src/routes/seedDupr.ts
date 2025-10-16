@@ -178,9 +178,11 @@ const seedDuprRoute: FastifyPluginAsync = async (fastify) => {
       }
 
       // Insert pools into database
-      const poolInserts = assignedPools.map((pool) => ({
+      const poolInserts = assignedPools.map((pool, index) => ({
         division_id: divisionId,
         name: pool.name,
+        label: String.fromCharCode(65 + index), // A, B, C, etc.
+        order_index: index + 1,
       }));
 
       const insertedPools = await db.insert(pools).values(poolInserts).returning();

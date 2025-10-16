@@ -638,6 +638,82 @@ const publicRoutes: FastifyPluginAsync = async (fastify) => {
     }
   );
 
+  // ============================================
+  // GET /api/public/divisions/:divisionId/pools
+  // List pools in a division (public read-only)
+  // ============================================
+  fastify.get<{
+    Params: { divisionId: string };
+  }>(
+    '/divisions/:divisionId/pools',
+    {
+      ...rateLimitConfig,
+    },
+    async (request, reply) => {
+      const divisionId = Number(request.params.divisionId);
+
+      if (isNaN(divisionId)) {
+        return reply.badRequest('Invalid division ID');
+      }
+
+      try {
+        // Verify division exists
+        const [division] = await db
+          .select()
+          .from(divisions)
+          .where(eq(divisions.id, divisionId))
+          .limit(1);
+
+        if (!division) {
+          return reply.notFound(`Division with ID ${divisionId} not found`);
+        }
+
+        // Get all pools for this division with team counts
+        const divisionPools = await db
+          .select()
+          .from(pools)
+          .where(eq(pools.division_id, divisionId))
+          .orderBy(pools.order_index);
+
+        // Get teams for each pool
+        const poolsWithTeams = await Promise.all(
+          divisionPools.map(async (pool) => {
+            const poolTeams = await db
+              .select()
+              .from(teams)
+              .where(eq(teams.pool_id, pool.id))
+              .orderBy(teams.pool_seed);
+
+            return {
+              id: pool.id,
+              divisionId: pool.division_id,
+              name: pool.name,
+              label: pool.label,
+              orderIndex: pool.order_index,
+              createdAt: serializeDate(pool.created_at),
+              updatedAt: serializeDate(pool.updated_at),
+              teams: poolTeams.map(team => ({
+                id: team.id,
+                name: team.name,
+                poolSeed: team.pool_seed,
+              })),
+            };
+          })
+        );
+
+        // Set cache headers
+        reply.header('Cache-Control', 'public, max-age=30');
+
+        return reply.send({
+          data: poolsWithTeams,
+        });
+      } catch (error) {
+        fastify.log.error({ error, divisionId }, 'Error fetching pools');
+        throw error;
+      }
+    }
+  );
+
   fastify.log.info('Public API routes registered');
 };
 

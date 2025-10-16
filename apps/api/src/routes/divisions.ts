@@ -296,6 +296,200 @@ const divisionsRoutes: FastifyPluginAsync = async (fastify) => {
       throw error;
     }
   });
+  // ============================================
+  // POOL MANAGEMENT ENDPOINTS
+  // ============================================
+
+  /**
+   * Create pool schema.
+   */
+  const createPoolSchema = z.object({
+    name: z.string().min(1, 'Name is required').max(50, 'Name too long').trim(),
+    label: z.string().length(1, 'Label must be exactly 1 character').regex(/^[A-Z]$/, 'Label must be uppercase letter'),
+    orderIndex: z.number().int().min(1).max(100),
+  });
+
+  /**
+   * Update pool schema.
+   */
+  const updatePoolSchema = z.object({
+    name: z.string().min(1, 'Name is required').max(50, 'Name too long').trim(),
+    label: z.string().length(1, 'Label must be exactly 1 character').regex(/^[A-Z]$/, 'Label must be uppercase letter'),
+    orderIndex: z.number().int().min(1).max(100),
+  });
+
+  // CREATE Pool
+  fastify.post<{
+    Params: { divisionId: number };
+    Body: z.infer<typeof createPoolSchema>;
+  }>('/divisions/:divisionId/pools', {
+    preHandler: [requireAuth, requireAdmin],
+  }, async (request, reply) => {
+    const divisionId = Number(request.params.divisionId);
+
+    if (isNaN(divisionId)) {
+      return reply.status(400).send({
+        error: 'Invalid division ID',
+      });
+    }
+
+    // Validate body
+    const bodyResult = createPoolSchema.safeParse(request.body);
+    if (!bodyResult.success) {
+      return reply.status(400).send({
+        error: 'Invalid request body',
+        details: bodyResult.error.flatten(),
+      });
+    }
+
+    const { name, label, orderIndex } = bodyResult.data;
+
+    try {
+      // Verify division exists
+      const division = await db
+        .select()
+        .from(divisions)
+        .where(eq(divisions.id, divisionId))
+        .limit(1)
+        .then((rows) => rows[0]);
+
+      if (!division) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: `Division with ID ${divisionId} not found`,
+        });
+      }
+
+      // Create pool
+      const [pool] = await db
+        .insert(pools)
+        .values({
+          division_id: divisionId,
+          name,
+          label,
+          order_index: orderIndex,
+        })
+        .returning();
+
+      return reply.status(201).send(pool);
+    } catch (error) {
+      fastify.log.error({ error, divisionId, name, label }, 'Error creating pool');
+      throw error;
+    }
+  });
+
+  // UPDATE Pool
+  fastify.put<{
+    Params: { poolId: number };
+    Body: z.infer<typeof updatePoolSchema>;
+  }>('/pools/:poolId', {
+    preHandler: [requireAuth, requireAdmin],
+  }, async (request, reply) => {
+    const poolId = Number(request.params.poolId);
+
+    if (isNaN(poolId)) {
+      return reply.status(400).send({
+        error: 'Invalid pool ID',
+      });
+    }
+
+    // Validate body
+    const bodyResult = updatePoolSchema.safeParse(request.body);
+    if (!bodyResult.success) {
+      return reply.status(400).send({
+        error: 'Invalid request body',
+        details: bodyResult.error.flatten(),
+      });
+    }
+
+    const { name, label, orderIndex } = bodyResult.data;
+
+    try {
+      // Check if pool exists
+      const existing = await db
+        .select()
+        .from(pools)
+        .where(eq(pools.id, poolId))
+        .limit(1)
+        .then((rows) => rows[0]);
+
+      if (!existing) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: `Pool with ID ${poolId} not found`,
+        });
+      }
+
+      // Update pool
+      const [updated] = await db
+        .update(pools)
+        .set({
+          name,
+          label,
+          order_index: orderIndex,
+          updated_at: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(pools.id, poolId))
+        .returning();
+
+      return reply.send(updated);
+    } catch (error) {
+      fastify.log.error({ error, poolId, name, label }, 'Error updating pool');
+      throw error;
+    }
+  });
+
+  // DELETE Pool
+  fastify.delete<{
+    Params: { poolId: number };
+  }>('/pools/:poolId', {
+    preHandler: [requireAuth, requireAdmin],
+  }, async (request, reply) => {
+    const poolId = Number(request.params.poolId);
+
+    if (isNaN(poolId)) {
+      return reply.status(400).send({
+        error: 'Invalid pool ID',
+      });
+    }
+
+    try {
+      // Check if pool exists
+      const existing = await db
+        .select()
+        .from(pools)
+        .where(eq(pools.id, poolId))
+        .limit(1)
+        .then((rows) => rows[0]);
+
+      if (!existing) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: `Pool with ID ${poolId} not found`,
+        });
+      }
+
+      // Unassign teams from this pool (set pool_id to null)
+      await db
+        .update(teams)
+        .set({ pool_id: null, pool_seed: null })
+        .where(eq(teams.pool_id, poolId));
+
+      // Delete associated matches
+      await db.delete(matches).where(eq(matches.pool_id, poolId));
+
+      // Delete pool
+      await db.delete(pools).where(eq(pools.id, poolId));
+
+      return reply.send({
+        message: 'Pool deleted successfully',
+        deletedId: poolId,
+      });
+    } catch (error) {
+      fastify.log.error({ error, poolId }, 'Error deleting pool');
+      throw error;
+    }
+  });
 };
 
 export default divisionsRoutes;
