@@ -28,6 +28,14 @@ export const teams = sqliteTable('teams', {
   pool_id: integer('pool_id'),
   name: text('name').notNull(),
   pool_seed: integer('pool_seed'), // Team ranking within pool
+
+  // Stats fields (calculated from match results)
+  wins: integer('wins').notNull().default(0),
+  losses: integer('losses').notNull().default(0),
+  points_for: integer('points_for').notNull().default(0),
+  points_against: integer('points_against').notNull().default(0),
+  matches_played: integer('matches_played').notNull().default(0),
+
   created_at: text('created_at')
     .notNull()
     .default(sql`CURRENT_TIMESTAMP`),
@@ -66,12 +74,33 @@ export const matches = sqliteTable('matches', {
   match_number: integer('match_number').notNull(),
   team_a_id: integer('team_a_id').notNull(),
   team_b_id: integer('team_b_id'), // Nullable for BYE matches
+
+  // Legacy score fields (deprecated - use score_json instead)
   score_a: integer('score_a'),
   score_b: integer('score_b'),
-  status: text('status', { enum: ['pending', 'completed'] })
+
+  // Scores (JSON format for flexibility - supports multiple games)
+  score_json: text('score_json'), // JSON string: {games: [{teamA: number, teamB: number}], notes?: string}
+
+  // Match status
+  status: text('status', {
+    enum: ['pending', 'in_progress', 'completed', 'cancelled', 'walkover', 'forfeit']
+  })
     .notNull()
     .default('pending'),
+
+  // Winner (for quick lookups without parsing JSON)
+  winner_team_id: integer('winner_team_id'),
+
+  // Scheduling
+  scheduled_at: text('scheduled_at'),
+  court_number: integer('court_number'),
+  slot_index: integer('slot_index'),
+
   created_at: text('created_at')
+    .notNull()
+    .default(sql`CURRENT_TIMESTAMP`),
+  updated_at: text('updated_at')
     .notNull()
     .default(sql`CURRENT_TIMESTAMP`),
 });
@@ -186,3 +215,24 @@ export type NewUser = typeof users.$inferInsert;
 
 export type Session = typeof sessions.$inferSelect;
 export type NewSession = typeof sessions.$inferInsert;
+
+/**
+ * Match-related TypeScript types
+ */
+export type MatchStatus =
+  | 'pending'
+  | 'in_progress'
+  | 'completed'
+  | 'cancelled'
+  | 'walkover'
+  | 'forfeit';
+
+export interface GameScore {
+  teamA: number;
+  teamB: number;
+}
+
+export interface MatchScore {
+  games: GameScore[];
+  notes?: string;
+}

@@ -62,6 +62,42 @@ sqlite.exec(`
   END;
 `);
 
+// Phase 6: Add team statistics columns
+try {
+  sqlite.exec(`ALTER TABLE teams ADD COLUMN wins INTEGER DEFAULT 0 NOT NULL;`);
+  console.log('✅ Added wins column to teams table');
+} catch (e) {
+  // Column already exists, ignore
+}
+
+try {
+  sqlite.exec(`ALTER TABLE teams ADD COLUMN losses INTEGER DEFAULT 0 NOT NULL;`);
+  console.log('✅ Added losses column to teams table');
+} catch (e) {
+  // Column already exists, ignore
+}
+
+try {
+  sqlite.exec(`ALTER TABLE teams ADD COLUMN points_for INTEGER DEFAULT 0 NOT NULL;`);
+  console.log('✅ Added points_for column to teams table');
+} catch (e) {
+  // Column already exists, ignore
+}
+
+try {
+  sqlite.exec(`ALTER TABLE teams ADD COLUMN points_against INTEGER DEFAULT 0 NOT NULL;`);
+  console.log('✅ Added points_against column to teams table');
+} catch (e) {
+  // Column already exists, ignore
+}
+
+try {
+  sqlite.exec(`ALTER TABLE teams ADD COLUMN matches_played INTEGER DEFAULT 0 NOT NULL;`);
+  console.log('✅ Added matches_played column to teams table');
+} catch (e) {
+  // Column already exists, ignore
+}
+
 // Create pools table
 sqlite.exec(`
   CREATE TABLE IF NOT EXISTS pools (
@@ -87,6 +123,59 @@ sqlite.exec(`
     status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'completed')),
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
+`);
+
+// Phase 6: Add match score tracking columns
+try {
+  sqlite.exec(`ALTER TABLE matches ADD COLUMN score_json TEXT;`);
+  console.log('✅ Added score_json column to matches table');
+} catch (e) {
+  // Column already exists, ignore
+}
+
+try {
+  sqlite.exec(`ALTER TABLE matches ADD COLUMN winner_team_id INTEGER;`);
+  console.log('✅ Added winner_team_id column to matches table');
+} catch (e) {
+  // Column already exists, ignore
+}
+
+try {
+  sqlite.exec(`ALTER TABLE matches ADD COLUMN scheduled_at TEXT;`);
+  console.log('✅ Added scheduled_at column to matches table');
+} catch (e) {
+  // Column already exists, ignore
+}
+
+try {
+  sqlite.exec(`ALTER TABLE matches ADD COLUMN court_number INTEGER;`);
+  console.log('✅ Added court_number column to matches table');
+} catch (e) {
+  // Column already exists, ignore
+}
+
+try {
+  sqlite.exec(`ALTER TABLE matches ADD COLUMN slot_index INTEGER;`);
+  console.log('✅ Added slot_index column to matches table');
+} catch (e) {
+  // Column already exists, ignore
+}
+
+try {
+  sqlite.exec(`ALTER TABLE matches ADD COLUMN updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL;`);
+  console.log('✅ Added updated_at column to matches table');
+} catch (e) {
+  // Column already exists, ignore
+}
+
+// Create trigger to auto-update matches updated_at
+sqlite.exec(`
+  CREATE TRIGGER IF NOT EXISTS matches_updated_at_trigger
+  AFTER UPDATE ON matches
+  FOR EACH ROW
+  BEGIN
+    UPDATE matches SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+  END;
 `);
 
 // Create players table
