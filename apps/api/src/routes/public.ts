@@ -5,7 +5,7 @@
 
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { eq, sql, desc, and, like } from 'drizzle-orm';
+import { eq, sql, desc, and, like, inArray } from 'drizzle-orm';
 import { db } from '../lib/db/drizzle.js';
 import { divisions, teams, pools, matches } from '../lib/db/schema.js';
 import { computePoolStandings } from 'tournament-engine';
@@ -436,7 +436,7 @@ const publicRoutes: FastifyPluginAsync = async (fastify) => {
         const teamIds = new Set(matchList.flatMap((m) => [m.team_a_id, m.team_b_id].filter(Boolean)));
 
         if (teamIds.size > 0) {
-          const teamsList = await db.select().from(teams).where(sql`${teams.id} IN (${Array.from(teamIds).join(',')})`);
+          const teamsList = await db.select().from(teams).where(inArray(teams.id, Array.from(teamIds)));
           teamsList.forEach((t) => teamsById.set(t.id, t.name));
         }
 
@@ -445,7 +445,7 @@ const publicRoutes: FastifyPluginAsync = async (fastify) => {
         const poolIds = new Set(matchList.map((m) => m.pool_id).filter(Boolean));
 
         if (poolIds.size > 0) {
-          const poolsList = await db.select().from(pools).where(sql`${pools.id} IN (${Array.from(poolIds).join(',')})`);
+          const poolsList = await db.select().from(pools).where(inArray(pools.id, Array.from(poolIds)));
           poolsList.forEach((p) => poolsById.set(p.id, p.name));
         }
 
