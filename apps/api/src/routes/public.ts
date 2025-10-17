@@ -454,18 +454,43 @@ const publicRoutes: FastifyPluginAsync = async (fastify) => {
         }
 
         // Format matches
-        const formattedMatches = matchList.map((match) => ({
-          id: match.id,
-          poolId: match.pool_id,
-          poolName: match.pool_id ? poolsById.get(match.pool_id) || null : null,
-          roundNumber: match.round_number,
-          matchNumber: match.match_number,
-          teamAName: teamsById.get(match.team_a_id) || 'Unknown',
-          teamBName: match.team_b_id ? teamsById.get(match.team_b_id) || 'Unknown' : null,
-          scoreA: match.score_a,
-          scoreB: match.score_b,
-          status: match.status,
-        }));
+        const formattedMatches = matchList.map((match) => {
+          // Parse scoreJson if it's a string
+          let scoreJson = null;
+          if (match.score_json) {
+            try {
+              scoreJson = typeof match.score_json === 'string'
+                ? JSON.parse(match.score_json)
+                : match.score_json;
+            } catch (e) {
+              fastify.log.warn({ matchId: match.id }, 'Failed to parse score_json');
+            }
+          }
+
+          return {
+            id: match.id,
+            divisionId: match.division_id,
+            poolId: match.pool_id,
+            poolName: match.pool_id ? poolsById.get(match.pool_id) || null : null,
+            roundNumber: match.round_number,
+            matchNumber: match.match_number,
+            teamAId: match.team_a_id,
+            teamAName: teamsById.get(match.team_a_id) || 'Unknown',
+            teamBId: match.team_b_id,
+            teamBName: match.team_b_id ? teamsById.get(match.team_b_id) || 'Unknown' : null,
+            scoreJson: scoreJson,
+            scoreA: match.score_a,
+            scoreB: match.score_b,
+            status: match.status,
+            winnerTeamId: match.winner_team_id,
+            scheduledAt: match.scheduled_at ? serializeDate(match.scheduled_at) : null,
+            courtNumber: match.court_number,
+            slotIndex: match.slot_index,
+            courtLabel: match.court_number ? `Court ${match.court_number}` : null,
+            createdAt: serializeDate(match.created_at),
+            updatedAt: serializeDate(match.updated_at),
+          };
+        });
 
         // Get total count
         const [countResult] = await db.select({ count: sql<number>`count(*)` }).from(matches).where(whereClause);
