@@ -575,6 +575,9 @@ const teamsRoutes: FastifyPluginAsync = async (fastify) => {
         divisionPools.map(p => [p.name.toLowerCase(), p])
       );
 
+      // Track newly created pools
+      const createdPools: string[] = [];
+
       // Process imports
       const created: number[] = [];
       const errors: Array<{ row: number; message: string; team?: string }> = [];
@@ -602,19 +605,53 @@ const teamsRoutes: FastifyPluginAsync = async (fastify) => {
             continue;
           }
 
-          // Lookup pool by name if provided
+          // Lookup pool by name if provided, or auto-create it
           let poolId: number | null = null;
           if (importTeam.poolName) {
-            const pool = poolsByName.get(importTeam.poolName.toLowerCase());
+            const poolNameLower = importTeam.poolName.trim().toLowerCase();
+            let pool = poolsByName.get(poolNameLower);
+
+            // Auto-create pool if it doesn't exist
             if (!pool) {
-              errors.push({
-                row: i + 1,
-                message: `Pool "${importTeam.poolName}" not found`,
-                team: importTeam.name,
-              });
-              continue;
+              try {
+                // Calculate next order index and label
+                const maxOrder = divisionPools.length > 0
+                  ? Math.max(...divisionPools.map(p => p.order_index))
+                  : 0;
+
+                // Generate label (A, B, C, ...)
+                const nextLabel = String.fromCharCode(65 + divisionPools.length); // 65 is 'A'
+
+                const [newPool] = await db
+                  .insert(pools)
+                  .values({
+                    division_id: divisionId,
+                    name: importTeam.poolName.trim(), // Use original casing from CSV
+                    label: nextLabel,
+                    order_index: maxOrder + 1,
+                  })
+                  .returning();
+
+                if (newPool) {
+                  pool = newPool;
+                  poolsByName.set(poolNameLower, newPool);
+                  divisionPools.push(newPool);
+                  createdPools.push(newPool.name);
+                  fastify.log.info({ poolName: newPool.name }, 'Auto-created pool during bulk import');
+                }
+              } catch (poolError) {
+                errors.push({
+                  row: i + 1,
+                  message: `Failed to create pool "${importTeam.poolName}": ${poolError instanceof Error ? poolError.message : 'Unknown error'}`,
+                  team: importTeam.name,
+                });
+                continue;
+              }
             }
-            poolId = pool.id;
+
+            if (pool) {
+              poolId = pool.id;
+            }
           }
 
           // Create team
@@ -649,6 +686,7 @@ const teamsRoutes: FastifyPluginAsync = async (fastify) => {
 
       return reply.send({
         created: created.length,
+        createdPools,
         errors,
       });
     } catch (error) {

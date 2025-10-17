@@ -433,7 +433,9 @@ const publicRoutes: FastifyPluginAsync = async (fastify) => {
 
         // Get team names
         const teamsById = new Map();
-        const teamIds = new Set(matchList.flatMap((m) => [m.team_a_id, m.team_b_id].filter(Boolean)));
+        const teamIds = new Set(
+          matchList.flatMap((m) => [m.team_a_id, m.team_b_id].filter((id): id is number => id !== null))
+        );
 
         if (teamIds.size > 0) {
           const teamsList = await db.select().from(teams).where(inArray(teams.id, Array.from(teamIds)));
@@ -442,7 +444,9 @@ const publicRoutes: FastifyPluginAsync = async (fastify) => {
 
         // Get pool names
         const poolsById = new Map();
-        const poolIds = new Set(matchList.map((m) => m.pool_id).filter(Boolean));
+        const poolIds = new Set(
+          matchList.map((m) => m.pool_id).filter((id): id is number => id !== null)
+        );
 
         if (poolIds.size > 0) {
           const poolsList = await db.select().from(pools).where(inArray(pools.id, Array.from(poolIds)));
