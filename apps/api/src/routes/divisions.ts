@@ -469,6 +469,117 @@ const divisionsRoutes: FastifyPluginAsync = async (fastify) => {
     orderIndex: z.number().int().min(1).max(100),
   });
 
+  /**
+   * Bulk create pools schema.
+   */
+  const bulkCreatePoolsSchema = z.object({
+    pools: z.array(createPoolSchema).min(1).max(26),
+  });
+
+  // BULK CREATE Pools
+  fastify.post<{
+    Params: { divisionId: number };
+    Body: z.infer<typeof bulkCreatePoolsSchema>;
+  }>('/divisions/:divisionId/pools/bulk', {
+    preHandler: [requireAuth, requireAdmin],
+  }, async (request, reply) => {
+    const divisionId = Number(request.params.divisionId);
+
+    if (isNaN(divisionId)) {
+      return reply.status(400).send({
+        error: 'Invalid division ID',
+      });
+    }
+
+    // Validate body
+    const bodyResult = bulkCreatePoolsSchema.safeParse(request.body);
+    if (!bodyResult.success) {
+      return reply.status(400).send({
+        error: 'Invalid request body',
+        details: bodyResult.error.flatten(),
+      });
+    }
+
+    const { pools: poolsToCreate } = bodyResult.data;
+
+    if (poolsToCreate.length === 0) {
+      return reply.status(400).send({
+        error: 'Invalid request',
+        message: 'At least one pool must be provided',
+      });
+    }
+
+    if (poolsToCreate.length > 26) {
+      return reply.status(400).send({
+        error: 'Invalid request',
+        message: 'Cannot create more than 26 pools at once',
+      });
+    }
+
+    try {
+      // Verify division exists
+      const division = await db
+        .select()
+        .from(divisions)
+        .where(eq(divisions.id, divisionId))
+        .limit(1)
+        .then((rows) => rows[0]);
+
+      if (!division) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: `Division with ID ${divisionId} not found`,
+        });
+      }
+
+      // Check for duplicate labels in existing pools
+      const labels = poolsToCreate.map(p => p.label);
+      const existingPools = await db
+        .select()
+        .from(pools)
+        .where(eq(pools.division_id, divisionId));
+
+      const existingLabels = new Set(existingPools.map(p => p.label));
+      const duplicates = labels.filter(label => existingLabels.has(label));
+
+      if (duplicates.length > 0) {
+        return reply.status(409).send({
+          error: 'Conflict',
+          message: `Pools with these labels already exist: ${duplicates.join(', ')}`,
+        });
+      }
+
+      // Create all pools in transaction
+      const createdPools = await db.transaction(async (tx) => {
+        const results = [];
+
+        for (const pool of poolsToCreate) {
+          const [created] = await tx.insert(pools).values({
+            division_id: divisionId,
+            name: pool.name,
+            label: pool.label,
+            order_index: pool.orderIndex,
+          }).returning();
+
+          results.push(created);
+        }
+
+        return results;
+      });
+
+      fastify.log.info({ divisionId, count: createdPools.length }, 'Bulk created pools');
+
+      return reply.status(201).send({
+        message: `Created ${createdPools.length} pools successfully`,
+        pools: createdPools
+      });
+
+    } catch (error) {
+      fastify.log.error({ error, divisionId, poolCount: poolsToCreate.length }, 'Error bulk creating pools');
+      throw error;
+    }
+  });
+
   // CREATE Pool
   fastify.post<{
     Params: { divisionId: number };
@@ -508,6 +619,21 @@ const divisionsRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.status(404).send({
           error: 'Not Found',
           message: `Division with ID ${divisionId} not found`,
+        });
+      }
+
+      // Check for duplicate labels in existing pools
+      const existingPools = await db
+        .select()
+        .from(pools)
+        .where(eq(pools.division_id, divisionId));
+
+      const existingLabels = new Set(existingPools.map(p => p.label));
+
+      if (existingLabels.has(label)) {
+        return reply.status(409).send({
+          error: 'Conflict',
+          message: `A pool with label '${label}' already exists in this division`,
         });
       }
 

@@ -47,7 +47,7 @@ export interface RoundRobinMatch {
   /** Score for team B, null if not played */
   scoreB?: number | null;
   /** Match status */
-  status: 'pending' | 'completed';
+  status: 'pending' | 'in_progress' | 'completed' | 'walkover' | 'forfeit' | 'cancelled';
   /** Slot index for scheduling (0-indexed, optional) */
   slotIndex?: number;
 }
