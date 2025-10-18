@@ -1,17 +1,45 @@
 /**
  * Database schema definitions using Drizzle ORM.
  * All field names use snake_case for consistency.
+ *
+ * UPDATED: Added tournaments table and tournament_id to divisions (Phase 1)
  */
 
 import { sql } from 'drizzle-orm';
 import { sqliteTable, integer, text, real } from 'drizzle-orm/sqlite-core';
 
 /**
- * Divisions table.
+ * Tournaments table (NEW - Phase 1)
+ * Stores top-level tournament information.
+ * Hierarchy: Tournament → Division → Pool → Team → Match
+ */
+export const tournaments = sqliteTable('tournaments', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  description: text('description'), // Optional description/notes
+  start_date: text('start_date'),   // ISO 8601 format (e.g., "2025-06-01" or "2025-06-01T10:00:00Z")
+  end_date: text('end_date'),       // ISO 8601 format
+  status: text('status', {
+    enum: ['draft', 'active', 'completed', 'archived']
+  })
+    .notNull()
+    .default('draft'),
+  created_at: text('created_at')
+    .notNull()
+    .default(sql`CURRENT_TIMESTAMP`),
+  updated_at: text('updated_at')
+    .notNull()
+    .default(sql`CURRENT_TIMESTAMP`),
+});
+
+/**
+ * Divisions table (UPDATED - Phase 1)
  * Stores tournament division information.
+ * NOW INCLUDES: tournament_id foreign key
  */
 export const divisions = sqliteTable('divisions', {
   id: integer('id').primaryKey({ autoIncrement: true }),
+  tournament_id: integer('tournament_id').notNull(), // ← NEW: FK to tournaments.id
   name: text('name').notNull(),
   created_at: text('created_at')
     .notNull()
@@ -189,6 +217,12 @@ export const sessions = sqliteTable('sessions', {
 /**
  * Type exports for use in application code.
  */
+
+// NEW: Tournament types (Phase 1)
+export type Tournament = typeof tournaments.$inferSelect;
+export type NewTournament = typeof tournaments.$inferInsert;
+
+// EXISTING: Division types (unchanged)
 export type Division = typeof divisions.$inferSelect;
 export type NewDivision = typeof divisions.$inferInsert;
 
@@ -236,3 +270,8 @@ export interface MatchScore {
   games: GameScore[];
   notes?: string;
 }
+
+/**
+ * NEW: Tournament-related TypeScript types (Phase 1)
+ */
+export type TournamentStatus = 'draft' | 'active' | 'completed' | 'archived';
