@@ -1,47 +1,14 @@
 /**
- * Division CRUD endpoints (UPDATED - Phase 4A: Tournament Context).
- * All admin routes now require tournament context.
- *
- * Routes:
- * - POST   /tournaments/:tournamentId/divisions
- * - GET    /tournaments/:tournamentId/divisions
- * - GET    /tournaments/:tournamentId/divisions/:id
- * - PUT    /tournaments/:tournamentId/divisions/:id
- * - DELETE /tournaments/:tournamentId/divisions/:id
- * - POST   /tournaments/:tournamentId/divisions/:divisionId/generate-matches
- * - POST   /tournaments/:tournamentId/divisions/:divisionId/pools
- * - POST   /tournaments/:tournamentId/divisions/:divisionId/pools/bulk
+ * Division CRUD endpoints.
+ * Manages tournament divisions with full CRUD operations.
  */
 
 import type { FastifyPluginAsync } from 'fastify';
 import { eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../lib/db/drizzle.js';
-import { tournaments, divisions, teams, pools, matches, players, court_assignments } from '../lib/db/schema.js';
+import { divisions, teams, pools, matches, players, court_assignments } from '../lib/db/schema.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
-
-/**
- * Tournament ID parameter schema.
- */
-const tournamentParamsSchema = z.object({
-  tournamentId: z.coerce.number().int().positive(),
-});
-
-/**
- * Tournament + Division ID parameter schema.
- */
-const tournamentDivisionParamsSchema = z.object({
-  tournamentId: z.coerce.number().int().positive(),
-  id: z.coerce.number().int().positive(),
-});
-
-/**
- * Division ID parameter schema (for generate-matches and pools).
- */
-const divisionIdParamsSchema = z.object({
-  tournamentId: z.coerce.number().int().positive(),
-  divisionId: z.coerce.number().int().positive(),
-});
 
 /**
  * Create division schema.
@@ -58,6 +25,13 @@ const updateDivisionSchema = z.object({
 });
 
 /**
+ * Division ID parameter schema.
+ */
+const divisionParamsSchema = z.object({
+  id: z.coerce.number().int().positive(),
+});
+
+/**
  * List divisions query schema.
  */
 const listDivisionsQuerySchema = z.object({
@@ -67,80 +41,12 @@ const listDivisionsQuerySchema = z.object({
 
 // eslint-disable-next-line @typescript-eslint/require-await
 const divisionsRoutes: FastifyPluginAsync = async (fastify) => {
-  /**
-   * Validate tournament exists and return it.
-   * Returns null and sends 404 response if not found.
-   */
-  async function validateTournament(tournamentId: number, reply: any) {
-    const tournament = await db
-      .select()
-      .from(tournaments)
-      .where(eq(tournaments.id, tournamentId))
-      .limit(1)
-      .then((rows) => rows[0]);
-
-    if (!tournament) {
-      reply.status(404).send({
-        error: 'Tournament not found',
-        message: `Tournament with ID ${tournamentId} not found`,
-      });
-      return null;
-    }
-
-    return tournament;
-  }
-
-  /**
-   * Validate division belongs to tournament.
-   * Returns null and sends 403/404 response if validation fails.
-   */
-  async function validateDivisionInTournament(
-    tournamentId: number,
-    divisionId: number,
-    reply: any
-  ) {
-    const division = await db
-      .select()
-      .from(divisions)
-      .where(eq(divisions.id, divisionId))
-      .limit(1)
-      .then((rows) => rows[0]);
-
-    if (!division) {
-      reply.status(404).send({
-        error: 'Division not found',
-        message: `Division with ID ${divisionId} not found`,
-      });
-      return null;
-    }
-
-    if (division.tournament_id !== tournamentId) {
-      reply.status(403).send({
-        error: 'Forbidden',
-        message: 'Division does not belong to this tournament',
-      });
-      return null;
-    }
-
-    return division;
-  }
-
   // CREATE Division
   fastify.post<{
-    Params: z.infer<typeof tournamentParamsSchema>;
     Body: z.infer<typeof createDivisionSchema>;
-  }>('/tournaments/:tournamentId/divisions', {
+  }>('/divisions', {
     preHandler: [requireAuth, requireAdmin],
   }, async (request, reply) => {
-    // Validate params
-    const paramsResult = tournamentParamsSchema.safeParse(request.params);
-    if (!paramsResult.success) {
-      return reply.status(400).send({
-        error: 'Invalid parameters',
-        details: paramsResult.error.flatten(),
-      });
-    }
-
     // Validate body
     const bodyResult = createDivisionSchema.safeParse(request.body);
     if (!bodyResult.success) {
@@ -150,44 +56,25 @@ const divisionsRoutes: FastifyPluginAsync = async (fastify) => {
       });
     }
 
-    const { tournamentId } = paramsResult.data;
     const { name } = bodyResult.data;
 
     try {
-      // Validate tournament exists
-      const tournament = await validateTournament(tournamentId, reply);
-      if (!tournament) return;
-
-      // Create division with tournament_id
       const [division] = await db
         .insert(divisions)
-        .values({
-          name,
-          tournament_id: tournamentId,
-        })
+        .values({ name })
         .returning();
 
       return reply.status(201).send(division);
     } catch (error) {
-      fastify.log.error({ error, tournamentId, name }, 'Error creating division');
+      fastify.log.error({ error, name }, 'Error creating division');
       throw error;
     }
   });
 
   // LIST Divisions
   fastify.get<{
-    Params: z.infer<typeof tournamentParamsSchema>;
     Querystring: z.infer<typeof listDivisionsQuerySchema>;
-  }>('/tournaments/:tournamentId/divisions', async (request, reply) => {
-    // Validate params
-    const paramsResult = tournamentParamsSchema.safeParse(request.params);
-    if (!paramsResult.success) {
-      return reply.status(400).send({
-        error: 'Invalid parameters',
-        details: paramsResult.error.flatten(),
-      });
-    }
-
+  }>('/divisions', async (request, reply) => {
     // Validate query
     const queryResult = listDivisionsQuerySchema.safeParse(request.query);
     if (!queryResult.success) {
@@ -197,28 +84,21 @@ const divisionsRoutes: FastifyPluginAsync = async (fastify) => {
       });
     }
 
-    const { tournamentId } = paramsResult.data;
     const { limit, offset } = queryResult.data;
 
     try {
-      // Validate tournament exists
-      const tournament = await validateTournament(tournamentId, reply);
-      if (!tournament) return;
-
-      // Get divisions for this tournament with pagination
+      // Get divisions with pagination
       const divisionsList = await db
         .select()
         .from(divisions)
-        .where(eq(divisions.tournament_id, tournamentId))
         .limit(limit)
         .offset(offset)
         .orderBy(sql`${divisions.created_at} DESC`);
 
-      // Get total count for this tournament
+      // Get total count
       const countResult = await db
         .select({ count: sql<number>`count(*)` })
-        .from(divisions)
-        .where(eq(divisions.tournament_id, tournamentId));
+        .from(divisions);
 
       return reply.send({
         divisions: divisionsList,
@@ -227,30 +107,40 @@ const divisionsRoutes: FastifyPluginAsync = async (fastify) => {
         offset,
       });
     } catch (error) {
-      fastify.log.error({ error, tournamentId }, 'Error listing divisions');
+      fastify.log.error({ error }, 'Error listing divisions');
       throw error;
     }
   });
 
   // GET Single Division
   fastify.get<{
-    Params: z.infer<typeof tournamentDivisionParamsSchema>;
-  }>('/tournaments/:tournamentId/divisions/:id', async (request, reply) => {
+    Params: { id: number };
+  }>('/divisions/:id', async (request, reply) => {
     // Validate parameters
-    const paramsResult = tournamentDivisionParamsSchema.safeParse(request.params);
+    const paramsResult = divisionParamsSchema.safeParse(request.params);
     if (!paramsResult.success) {
       return reply.status(400).send({
-        error: 'Invalid parameters',
+        error: 'Invalid division ID',
         details: paramsResult.error.flatten(),
       });
     }
 
-    const { tournamentId, id } = paramsResult.data;
+    const { id } = paramsResult.data;
 
     try {
-      // Validate division belongs to tournament
-      const division = await validateDivisionInTournament(tournamentId, id, reply);
-      if (!division) return;
+      const division = await db
+        .select()
+        .from(divisions)
+        .where(eq(divisions.id, id))
+        .limit(1)
+        .then((rows) => rows[0]);
+
+      if (!division) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: `Division with ID ${id} not found`,
+        });
+      }
 
       // Get stats
       const teamCount = await db
@@ -284,21 +174,21 @@ const divisionsRoutes: FastifyPluginAsync = async (fastify) => {
 
   // UPDATE Division
   fastify.put<{
-    Params: z.infer<typeof tournamentDivisionParamsSchema>;
+    Params: { id: number };
     Body: z.infer<typeof updateDivisionSchema>;
-  }>('/tournaments/:tournamentId/divisions/:id', {
+  }>('/divisions/:id', {
     preHandler: [requireAuth, requireAdmin],
   }, async (request, reply) => {
     // Validate parameters
-    const paramsResult = tournamentDivisionParamsSchema.safeParse(request.params);
+    const paramsResult = divisionParamsSchema.safeParse(request.params);
     if (!paramsResult.success) {
       return reply.status(400).send({
-        error: 'Invalid parameters',
+        error: 'Invalid division ID',
         details: paramsResult.error.flatten(),
       });
     }
 
-    const { tournamentId, id } = paramsResult.data;
+    const { id } = paramsResult.data;
 
     // Validate body
     const bodyResult = updateDivisionSchema.safeParse(request.body);
@@ -312,9 +202,20 @@ const divisionsRoutes: FastifyPluginAsync = async (fastify) => {
     const { name } = bodyResult.data;
 
     try {
-      // Validate division belongs to tournament
-      const existing = await validateDivisionInTournament(tournamentId, id, reply);
-      if (!existing) return;
+      // Check if division exists
+      const existing = await db
+        .select()
+        .from(divisions)
+        .where(eq(divisions.id, id))
+        .limit(1)
+        .then((rows) => rows[0]);
+
+      if (!existing) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: `Division with ID ${id} not found`,
+        });
+      }
 
       // Update division
       const [updated] = await db
@@ -332,25 +233,36 @@ const divisionsRoutes: FastifyPluginAsync = async (fastify) => {
 
   // DELETE Division
   fastify.delete<{
-    Params: z.infer<typeof tournamentDivisionParamsSchema>;
-  }>('/tournaments/:tournamentId/divisions/:id', {
+    Params: { id: number };
+  }>('/divisions/:id', {
     preHandler: [requireAuth, requireAdmin],
   }, async (request, reply) => {
     // Validate parameters
-    const paramsResult = tournamentDivisionParamsSchema.safeParse(request.params);
+    const paramsResult = divisionParamsSchema.safeParse(request.params);
     if (!paramsResult.success) {
       return reply.status(400).send({
-        error: 'Invalid parameters',
+        error: 'Invalid division ID',
         details: paramsResult.error.flatten(),
       });
     }
 
-    const { tournamentId, id } = paramsResult.data;
+    const { id } = paramsResult.data;
 
     try {
-      // Validate division belongs to tournament
-      const existing = await validateDivisionInTournament(tournamentId, id, reply);
-      if (!existing) return;
+      // Check if division exists
+      const existing = await db
+        .select()
+        .from(divisions)
+        .where(eq(divisions.id, id))
+        .limit(1)
+        .then((rows) => rows[0]);
+
+      if (!existing) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: `Division with ID ${id} not found`,
+        });
+      }
 
       // CASCADE DELETE: Delete related records in order
       // 1. Court assignments (references matches)
@@ -400,21 +312,18 @@ const divisionsRoutes: FastifyPluginAsync = async (fastify) => {
 
   // GENERATE Matches for Division
   fastify.post<{
-    Params: z.infer<typeof divisionIdParamsSchema>;
+    Params: { divisionId: number };
     Body: z.infer<typeof generateMatchesSchema>;
-  }>('/tournaments/:tournamentId/divisions/:divisionId/generate-matches', {
+  }>('/divisions/:divisionId/generate-matches', {
     preHandler: [requireAuth, requireAdmin],
   }, async (request, reply) => {
-    // Validate params
-    const paramsResult = divisionIdParamsSchema.safeParse(request.params);
-    if (!paramsResult.success) {
+    const divisionId = Number(request.params.divisionId);
+
+    if (isNaN(divisionId)) {
       return reply.status(400).send({
-        error: 'Invalid parameters',
-        details: paramsResult.error.flatten(),
+        error: 'Invalid division ID',
       });
     }
-
-    const { tournamentId, divisionId } = paramsResult.data;
 
     // Validate body
     const bodyResult = generateMatchesSchema.safeParse(request.body);
@@ -436,9 +345,20 @@ const divisionsRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     try {
-      // Validate division belongs to tournament
-      const division = await validateDivisionInTournament(tournamentId, divisionId, reply);
-      if (!division) return;
+      // Verify division exists
+      const division = await db
+        .select()
+        .from(divisions)
+        .where(eq(divisions.id, divisionId))
+        .limit(1)
+        .then((rows) => rows[0]);
+
+      if (!division) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: `Division with ID ${divisionId} not found`,
+        });
+      }
 
       // Get all pools for this division
       const divisionPools = await db
@@ -558,21 +478,18 @@ const divisionsRoutes: FastifyPluginAsync = async (fastify) => {
 
   // BULK CREATE Pools
   fastify.post<{
-    Params: z.infer<typeof divisionIdParamsSchema>;
+    Params: { divisionId: number };
     Body: z.infer<typeof bulkCreatePoolsSchema>;
-  }>('/tournaments/:tournamentId/divisions/:divisionId/pools/bulk', {
+  }>('/divisions/:divisionId/pools/bulk', {
     preHandler: [requireAuth, requireAdmin],
   }, async (request, reply) => {
-    // Validate params
-    const paramsResult = divisionIdParamsSchema.safeParse(request.params);
-    if (!paramsResult.success) {
+    const divisionId = Number(request.params.divisionId);
+
+    if (isNaN(divisionId)) {
       return reply.status(400).send({
-        error: 'Invalid parameters',
-        details: paramsResult.error.flatten(),
+        error: 'Invalid division ID',
       });
     }
-
-    const { tournamentId, divisionId } = paramsResult.data;
 
     // Validate body
     const bodyResult = bulkCreatePoolsSchema.safeParse(request.body);
@@ -600,9 +517,20 @@ const divisionsRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     try {
-      // Validate division belongs to tournament
-      const division = await validateDivisionInTournament(tournamentId, divisionId, reply);
-      if (!division) return;
+      // Verify division exists
+      const division = await db
+        .select()
+        .from(divisions)
+        .where(eq(divisions.id, divisionId))
+        .limit(1)
+        .then((rows) => rows[0]);
+
+      if (!division) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: `Division with ID ${divisionId} not found`,
+        });
+      }
 
       // Check for duplicate labels in existing pools
       const labels = poolsToCreate.map(p => p.label);
@@ -654,21 +582,18 @@ const divisionsRoutes: FastifyPluginAsync = async (fastify) => {
 
   // CREATE Pool
   fastify.post<{
-    Params: z.infer<typeof divisionIdParamsSchema>;
+    Params: { divisionId: number };
     Body: z.infer<typeof createPoolSchema>;
-  }>('/tournaments/:tournamentId/divisions/:divisionId/pools', {
+  }>('/divisions/:divisionId/pools', {
     preHandler: [requireAuth, requireAdmin],
   }, async (request, reply) => {
-    // Validate params
-    const paramsResult = divisionIdParamsSchema.safeParse(request.params);
-    if (!paramsResult.success) {
+    const divisionId = Number(request.params.divisionId);
+
+    if (isNaN(divisionId)) {
       return reply.status(400).send({
-        error: 'Invalid parameters',
-        details: paramsResult.error.flatten(),
+        error: 'Invalid division ID',
       });
     }
-
-    const { tournamentId, divisionId } = paramsResult.data;
 
     // Validate body
     const bodyResult = createPoolSchema.safeParse(request.body);
@@ -682,9 +607,20 @@ const divisionsRoutes: FastifyPluginAsync = async (fastify) => {
     const { name, label, orderIndex } = bodyResult.data;
 
     try {
-      // Validate division belongs to tournament
-      const division = await validateDivisionInTournament(tournamentId, divisionId, reply);
-      if (!division) return;
+      // Verify division exists
+      const division = await db
+        .select()
+        .from(divisions)
+        .where(eq(divisions.id, divisionId))
+        .limit(1)
+        .then((rows) => rows[0]);
+
+      if (!division) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: `Division with ID ${divisionId} not found`,
+        });
+      }
 
       // Check for duplicate labels in existing pools
       const existingPools = await db
