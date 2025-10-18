@@ -16,6 +16,7 @@ import exportCsvRoute from './routes/exportCsv.js';
 import exportExcelRoute from './routes/exportExcel.js';
 import scoreMatchRoute from './routes/scoreMatch.js';
 import standingsRoute from './routes/standings.js';
+import tournamentsRoutes from './routes/tournaments.js'; // Phase 2: NEW
 import divisionsRoutes from './routes/divisions.js';
 import teamsRoutes from './routes/teams.js';
 import publicRoutes from './routes/public.js';
@@ -166,6 +167,10 @@ async function bootstrap() {
   // Register routes
   await fastify.register(healthRoute);
   await fastify.register(authRoutes, { prefix: '/api' });
+
+  // Phase 2: Tournament routes (NEW - top-level entity)
+  await fastify.register(tournamentsRoutes, { prefix: '/api' });
+
   await fastify.register(divisionsRoutes, { prefix: '/api' });
   await fastify.register(teamsRoutes, { prefix: '/api' });
   await fastify.register(seedRoute, { prefix: '/api' });

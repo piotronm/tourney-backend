@@ -1,13 +1,20 @@
 /**
  * Public API routes for frontend integration.
  * No authentication required - read-only access to tournament data.
+ *
+ * UPDATED: Phase 2 - Tournament hierarchy restructuring
+ * All division routes now nest under tournaments
+ *
+ * BREAKING CHANGES:
+ * - OLD: GET /api/public/divisions
+ * - NEW: GET /api/public/tournaments/:tournamentId/divisions
  */
 
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { eq, sql, desc, and, like, inArray } from 'drizzle-orm';
 import { db } from '../lib/db/drizzle.js';
-import { divisions, teams, pools, matches } from '../lib/db/schema.js';
+import { tournaments, divisions, teams, pools, matches } from '../lib/db/schema.js';
 import { computePoolStandings } from 'tournament-engine';
 
 // ============================================
@@ -27,14 +34,19 @@ function serializeDate(date: Date | string | null | undefined): string {
 // Zod Schemas for Validation
 // ============================================
 
+const tournamentParamsSchema = z.object({
+  tournamentId: z.coerce.number().int().positive(),
+});
+
+const tournamentAndDivisionParamsSchema = z.object({
+  tournamentId: z.coerce.number().int().positive(),
+  id: z.coerce.number().int().positive(),
+});
+
 const listDivisionsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(100).default(20),
   offset: z.coerce.number().int().min(0).default(0),
   search: z.string().optional(),
-});
-
-const divisionParamsSchema = z.object({
-  id: z.coerce.number().int().positive(),
 });
 
 const standingsQuerySchema = z.object({
@@ -56,8 +68,14 @@ const listTeamsQuerySchema = z.object({
 });
 
 const teamParamsSchema = z.object({
+  tournamentId: z.coerce.number().int().positive(),
   divisionId: z.coerce.number().int().positive(),
   teamId: z.coerce.number().int().positive(),
+});
+
+const poolParamsSchema = z.object({
+  tournamentId: z.coerce.number().int().positive(),
+  divisionId: z.coerce.number().int().positive(),
 });
 
 // ============================================
@@ -76,42 +94,274 @@ const publicRoutes: FastifyPluginAsync = async (fastify) => {
   };
 
   // ============================================
-  // GET /api/public/divisions
-  // List all divisions (paginated)
+  // TOURNAMENT ENDPOINTS (NEW)
+  // ============================================
+
+  // ============================================
+  // GET /api/public/tournaments
+  // List all active tournaments
   // ============================================
   fastify.get(
-    '/divisions',
+    '/tournaments',
     {
       ...rateLimitConfig,
     },
     async (request, reply) => {
+      try {
+        // Get all active tournaments
+        const tournamentsList = await db
+          .select()
+          .from(tournaments)
+          .where(eq(tournaments.status, 'active'))
+          .orderBy(desc(tournaments.start_date));
+
+        // Get stats for each tournament
+        const tournamentsWithStats = await Promise.all(
+          tournamentsList.map(async (tournament) => {
+            const [divisionCount] = await db
+              .select({ count: sql<number>`count(*)` })
+              .from(divisions)
+              .where(eq(divisions.tournament_id, tournament.id));
+
+            // Get team count via divisions
+            const [teamCount] = await db
+              .select({ count: sql<number>`count(*)` })
+              .from(teams)
+              .where(sql`${teams.division_id} IN (
+                SELECT ${divisions.id} FROM ${divisions}
+                WHERE ${divisions.tournament_id} = ${tournament.id}
+              )`);
+
+            // Get match count via divisions
+            const [matchCount] = await db
+              .select({ count: sql<number>`count(*)` })
+              .from(matches)
+              .where(sql`${matches.division_id} IN (
+                SELECT ${divisions.id} FROM ${divisions}
+                WHERE ${divisions.tournament_id} = ${tournament.id}
+              )`);
+
+            return {
+              id: tournament.id,
+              name: tournament.name,
+              description: tournament.description,
+              startDate: tournament.start_date,
+              endDate: tournament.end_date,
+              status: tournament.status,
+              createdAt: serializeDate(tournament.created_at),
+              updatedAt: serializeDate(tournament.updated_at),
+              stats: {
+                divisions: Number(divisionCount?.count || 0),
+                teams: Number(teamCount?.count || 0),
+                matches: Number(matchCount?.count || 0),
+              },
+            };
+          })
+        );
+
+        // Set cache headers for performance
+        reply.header('Cache-Control', 'public, max-age=60');
+
+        return reply.send({
+          data: tournamentsWithStats,
+        });
+      } catch (error) {
+        fastify.log.error({ error }, 'Error listing tournaments');
+        throw error;
+      }
+    }
+  );
+
+  // ============================================
+  // GET /api/public/tournaments/:tournamentId
+  // Get single tournament with full details
+  // ============================================
+  fastify.get(
+    '/tournaments/:tournamentId',
+    {
+      ...rateLimitConfig,
+    },
+    async (request, reply) => {
+      const paramsResult = tournamentParamsSchema.safeParse(request.params);
+
+      if (!paramsResult.success) {
+        return reply.badRequest('Invalid tournament ID');
+      }
+
+      const { tournamentId } = paramsResult.data;
+
+      try {
+        // Get tournament
+        const [tournament] = await db
+          .select()
+          .from(tournaments)
+          .where(eq(tournaments.id, tournamentId))
+          .limit(1);
+
+        if (!tournament) {
+          return reply.notFound(`Tournament with ID ${tournamentId} not found`);
+        }
+
+        // Get stats
+        const [divisionCount] = await db
+          .select({ count: sql<number>`count(*)` })
+          .from(divisions)
+          .where(eq(divisions.tournament_id, tournamentId));
+
+        const [teamCount] = await db
+          .select({ count: sql<number>`count(*)` })
+          .from(teams)
+          .where(sql`${teams.division_id} IN (
+            SELECT ${divisions.id} FROM ${divisions}
+            WHERE ${divisions.tournament_id} = ${tournamentId}
+          )`);
+
+        const [matchCount] = await db
+          .select({ count: sql<number>`count(*)` })
+          .from(matches)
+          .where(sql`${matches.division_id} IN (
+            SELECT ${divisions.id} FROM ${divisions}
+            WHERE ${divisions.tournament_id} = ${tournamentId}
+          )`);
+
+        const [completedCount] = await db
+          .select({ count: sql<number>`count(*)` })
+          .from(matches)
+          .where(sql`${matches.division_id} IN (
+            SELECT ${divisions.id} FROM ${divisions}
+            WHERE ${divisions.tournament_id} = ${tournamentId}
+          ) AND ${matches.status} = 'completed'`);
+
+        // Get divisions for this tournament
+        const tournamentDivisions = await db
+          .select()
+          .from(divisions)
+          .where(eq(divisions.tournament_id, tournamentId));
+
+        const divisionsWithCounts = await Promise.all(
+          tournamentDivisions.map(async (division) => {
+            const [teamCountResult] = await db
+              .select({ count: sql<number>`count(*)` })
+              .from(teams)
+              .where(eq(teams.division_id, division.id));
+
+            const [poolCountResult] = await db
+              .select({ count: sql<number>`count(*)` })
+              .from(pools)
+              .where(eq(pools.division_id, division.id));
+
+            return {
+              id: division.id,
+              name: division.name,
+              teamCount: Number(teamCountResult?.count || 0),
+              poolCount: Number(poolCountResult?.count || 0),
+            };
+          })
+        );
+
+        // Set cache headers
+        reply.header('Cache-Control', 'public, max-age=60');
+
+        return reply.send({
+          id: tournament.id,
+          name: tournament.name,
+          description: tournament.description,
+          startDate: tournament.start_date,
+          endDate: tournament.end_date,
+          status: tournament.status,
+          createdAt: serializeDate(tournament.created_at),
+          updatedAt: serializeDate(tournament.updated_at),
+          stats: {
+            divisions: Number(divisionCount?.count || 0),
+            teams: Number(teamCount?.count || 0),
+            matches: Number(matchCount?.count || 0),
+            completedMatches: Number(completedCount?.count || 0),
+          },
+          divisions: divisionsWithCounts,
+        });
+      } catch (error) {
+        fastify.log.error({ error, tournamentId }, 'Error fetching tournament');
+        throw error;
+      }
+    }
+  );
+
+  // ============================================
+  // DIVISION ENDPOINTS (UPDATED - Now nested under tournaments)
+  // ============================================
+
+  // ============================================
+  // GET /api/public/tournaments/:tournamentId/divisions
+  // List all divisions in a tournament (paginated)
+  // ============================================
+  fastify.get(
+    '/tournaments/:tournamentId/divisions',
+    {
+      ...rateLimitConfig,
+    },
+    async (request, reply) => {
+      const paramsResult = tournamentParamsSchema.safeParse(request.params);
       const queryResult = listDivisionsQuerySchema.safeParse(request.query);
+
+      if (!paramsResult.success) {
+        return reply.badRequest('Invalid tournament ID');
+      }
 
       if (!queryResult.success) {
         return reply.badRequest('Invalid query parameters');
       }
 
+      const { tournamentId } = paramsResult.data;
       const { limit, offset, search } = queryResult.data;
 
       try {
-        // Build query with optional search filter
+        // Verify tournament exists
+        const [tournament] = await db
+          .select()
+          .from(tournaments)
+          .where(eq(tournaments.id, tournamentId))
+          .limit(1);
+
+        if (!tournament) {
+          return reply.notFound(`Tournament with ID ${tournamentId} not found`);
+        }
+
+        // Build query with tournament filter and optional search
+        const baseConditions = [eq(divisions.tournament_id, tournamentId)];
+
         const divisionsList = search
           ? await db
               .select()
               .from(divisions)
-              .where(sql`${divisions.name} LIKE ${`%${search}%`}`)
+              .where(
+                and(
+                  eq(divisions.tournament_id, tournamentId),
+                  sql`${divisions.name} LIKE ${`%${search}%`}`
+                )
+              )
               .limit(limit)
               .offset(offset)
               .orderBy(desc(divisions.created_at))
-          : await db.select().from(divisions).limit(limit).offset(offset).orderBy(desc(divisions.created_at));
+          : await db
+              .select()
+              .from(divisions)
+              .where(eq(divisions.tournament_id, tournamentId))
+              .limit(limit)
+              .offset(offset)
+              .orderBy(desc(divisions.created_at));
 
         // Get total count (with search filter if applicable)
-        const countResult = search
-          ? await db
-              .select({ count: sql<number>`count(*)` })
-              .from(divisions)
-              .where(sql`${divisions.name} LIKE ${`%${search}%`}`)
-          : await db.select({ count: sql<number>`count(*)` }).from(divisions);
+        const countConditions = search
+          ? and(
+              eq(divisions.tournament_id, tournamentId),
+              sql`${divisions.name} LIKE ${`%${search}%`}`
+            )
+          : eq(divisions.tournament_id, tournamentId);
+
+        const countResult = await db
+          .select({ count: sql<number>`count(*)` })
+          .from(divisions)
+          .where(countConditions);
 
         const total = Number(countResult[0]?.count || 0);
 
@@ -140,6 +390,7 @@ const publicRoutes: FastifyPluginAsync = async (fastify) => {
 
             return {
               id: division.id,
+              tournamentId: division.tournament_id,
               name: division.name,
               createdAt: serializeDate(division.created_at),
               stats: {
@@ -161,39 +412,56 @@ const publicRoutes: FastifyPluginAsync = async (fastify) => {
             total,
             limit,
             offset,
+            tournamentId,
+            tournamentName: tournament.name,
           },
         });
       } catch (error) {
-        fastify.log.error({ error }, 'Error listing divisions');
+        fastify.log.error({ error, tournamentId }, 'Error listing divisions');
         throw error;
       }
     }
   );
 
   // ============================================
-  // GET /api/public/divisions/:id
+  // GET /api/public/tournaments/:tournamentId/divisions/:id
   // Get single division with full details
   // ============================================
   fastify.get(
-    '/divisions/:id',
+    '/tournaments/:tournamentId/divisions/:id',
     {
       ...rateLimitConfig,
     },
     async (request, reply) => {
-      const paramsResult = divisionParamsSchema.safeParse(request.params);
+      const paramsResult = tournamentAndDivisionParamsSchema.safeParse(request.params);
 
       if (!paramsResult.success) {
-        return reply.badRequest('Invalid division ID');
+        return reply.badRequest('Invalid tournament or division ID');
       }
 
-      const { id } = paramsResult.data;
+      const { tournamentId, id } = paramsResult.data;
 
       try {
-        // Get division
-        const [division] = await db.select().from(divisions).where(eq(divisions.id, id)).limit(1);
+        // Verify tournament exists
+        const [tournament] = await db
+          .select()
+          .from(tournaments)
+          .where(eq(tournaments.id, tournamentId))
+          .limit(1);
+
+        if (!tournament) {
+          return reply.notFound(`Tournament with ID ${tournamentId} not found`);
+        }
+
+        // Get division and verify it belongs to this tournament
+        const [division] = await db
+          .select()
+          .from(divisions)
+          .where(and(eq(divisions.id, id), eq(divisions.tournament_id, tournamentId)))
+          .limit(1);
 
         if (!division) {
-          return reply.notFound(`Division with ID ${id} not found`);
+          return reply.notFound(`Division with ID ${id} not found in tournament ${tournamentId}`);
         }
 
         // Get stats
@@ -240,6 +508,7 @@ const publicRoutes: FastifyPluginAsync = async (fastify) => {
 
         return reply.send({
           id: division.id,
+          tournamentId: division.tournament_id,
           name: division.name,
           createdAt: serializeDate(division.created_at),
           stats: {
@@ -251,45 +520,60 @@ const publicRoutes: FastifyPluginAsync = async (fastify) => {
           pools: poolsWithCounts,
         });
       } catch (error) {
-        fastify.log.error({ error, id }, 'Error fetching division');
+        fastify.log.error({ error, tournamentId, id }, 'Error fetching division');
         throw error;
       }
     }
   );
 
   // ============================================
-  // GET /api/public/divisions/:id/standings
+  // GET /api/public/tournaments/:tournamentId/divisions/:id/standings
   // Get current standings (fully implemented)
   // ============================================
   fastify.get(
-    '/divisions/:id/standings',
+    '/tournaments/:tournamentId/divisions/:id/standings',
     {
       ...rateLimitConfig,
     },
     async (request, reply) => {
-      const paramsResult = divisionParamsSchema.safeParse(request.params);
+      const paramsResult = tournamentAndDivisionParamsSchema.safeParse(request.params);
       const queryResult = standingsQuerySchema.safeParse(request.query);
 
       if (!paramsResult.success) {
-        return reply.badRequest('Invalid division ID');
+        return reply.badRequest('Invalid tournament or division ID');
       }
 
       if (!queryResult.success) {
         return reply.badRequest('Invalid query parameters');
       }
 
-      const { id: divisionId } = paramsResult.data;
+      const { tournamentId, id: divisionId } = paramsResult.data;
       const { poolId: filterPoolId } = queryResult.data;
 
       try {
-        // 1. Verify division exists
-        const [division] = await db.select().from(divisions).where(eq(divisions.id, divisionId)).limit(1);
+        // 1. Verify tournament exists
+        const [tournament] = await db
+          .select()
+          .from(tournaments)
+          .where(eq(tournaments.id, tournamentId))
+          .limit(1);
 
-        if (!division) {
-          return reply.notFound(`Division with ID ${divisionId} not found`);
+        if (!tournament) {
+          return reply.notFound(`Tournament with ID ${tournamentId} not found`);
         }
 
-        // 2. Fetch pools (filtered if poolId provided)
+        // 2. Verify division exists and belongs to tournament
+        const [division] = await db
+          .select()
+          .from(divisions)
+          .where(and(eq(divisions.id, divisionId), eq(divisions.tournament_id, tournamentId)))
+          .limit(1);
+
+        if (!division) {
+          return reply.notFound(`Division with ID ${divisionId} not found in tournament ${tournamentId}`);
+        }
+
+        // 3. Fetch pools (filtered if poolId provided)
         let divisionPools;
 
         if (filterPoolId) {
@@ -302,7 +586,7 @@ const publicRoutes: FastifyPluginAsync = async (fastify) => {
           divisionPools = await db.select().from(pools).where(eq(pools.division_id, divisionId));
         }
 
-        // 3. For each pool, calculate standings
+        // 4. For each pool, calculate standings
         const poolStandings = await Promise.all(
           divisionPools.map(async (pool) => {
             // Get all completed matches in this pool
@@ -372,47 +656,64 @@ const publicRoutes: FastifyPluginAsync = async (fastify) => {
         reply.header('Cache-Control', 'public, max-age=15');
 
         return reply.send({
+          tournamentId,
+          tournamentName: tournament.name,
           divisionId,
           divisionName: division.name,
           pools: poolStandings,
         });
       } catch (error) {
-        fastify.log.error({ error, divisionId }, 'Error fetching standings');
+        fastify.log.error({ error, tournamentId, divisionId }, 'Error fetching standings');
         throw error;
       }
     }
   );
 
   // ============================================
-  // GET /api/public/divisions/:id/matches
+  // GET /api/public/tournaments/:tournamentId/divisions/:id/matches
   // Get matches for a division (with filters)
   // ============================================
   fastify.get(
-    '/divisions/:id/matches',
+    '/tournaments/:tournamentId/divisions/:id/matches',
     {
       ...rateLimitConfig,
     },
     async (request, reply) => {
-      const paramsResult = divisionParamsSchema.safeParse(request.params);
+      const paramsResult = tournamentAndDivisionParamsSchema.safeParse(request.params);
       const queryResult = matchesQuerySchema.safeParse(request.query);
 
       if (!paramsResult.success) {
-        return reply.badRequest('Invalid division ID');
+        return reply.badRequest('Invalid tournament or division ID');
       }
 
       if (!queryResult.success) {
         return reply.badRequest('Invalid query parameters');
       }
 
-      const { id: divisionId } = paramsResult.data;
+      const { tournamentId, id: divisionId } = paramsResult.data;
       const { poolId, status, limit, offset } = queryResult.data;
 
       try {
-        // Verify division exists
-        const [division] = await db.select().from(divisions).where(eq(divisions.id, divisionId)).limit(1);
+        // Verify tournament exists
+        const [tournament] = await db
+          .select()
+          .from(tournaments)
+          .where(eq(tournaments.id, tournamentId))
+          .limit(1);
+
+        if (!tournament) {
+          return reply.notFound(`Tournament with ID ${tournamentId} not found`);
+        }
+
+        // Verify division exists and belongs to tournament
+        const [division] = await db
+          .select()
+          .from(divisions)
+          .where(and(eq(divisions.id, divisionId), eq(divisions.tournament_id, tournamentId)))
+          .limit(1);
 
         if (!division) {
-          return reply.notFound(`Division with ID ${divisionId} not found`);
+          return reply.notFound(`Division with ID ${divisionId} not found in tournament ${tournamentId}`);
         }
 
         // Build query with filters
@@ -504,38 +805,71 @@ const publicRoutes: FastifyPluginAsync = async (fastify) => {
             total: Number(countResult?.count || 0),
             limit,
             offset,
+            tournamentId,
+            divisionId,
           },
         });
       } catch (error) {
-        fastify.log.error({ error, divisionId }, 'Error fetching matches');
+        fastify.log.error({ error, tournamentId, divisionId }, 'Error fetching matches');
         throw error;
       }
     }
   );
 
   // ============================================
-  // GET /api/public/divisions/:divisionId/teams
+  // GET /api/public/tournaments/:tournamentId/divisions/:divisionId/teams
   // List teams in a division (public read-only)
   // ============================================
   fastify.get<{
-    Params: { divisionId: string };
+    Params: { tournamentId: string; divisionId: string };
     Querystring: z.infer<typeof listTeamsQuerySchema>;
   }>(
-    '/divisions/:divisionId/teams',
+    '/tournaments/:tournamentId/divisions/:divisionId/teams',
     {
       ...rateLimitConfig,
     },
     async (request, reply) => {
-      const divisionId = Number(request.params.divisionId);
+      const paramsResult = z.object({
+        tournamentId: z.coerce.number().int().positive(),
+        divisionId: z.coerce.number().int().positive(),
+      }).safeParse(request.params);
+
       const queryResult = listTeamsQuerySchema.safeParse(request.query);
 
-      if (!queryResult.success || isNaN(divisionId)) {
-        return reply.badRequest('Invalid parameters');
+      if (!paramsResult.success) {
+        return reply.badRequest('Invalid tournament or division ID');
       }
 
+      if (!queryResult.success) {
+        return reply.badRequest('Invalid query parameters');
+      }
+
+      const { tournamentId, divisionId } = paramsResult.data;
       const { limit, offset, search, poolId } = queryResult.data;
 
       try {
+        // Verify tournament exists
+        const [tournament] = await db
+          .select()
+          .from(tournaments)
+          .where(eq(tournaments.id, tournamentId))
+          .limit(1);
+
+        if (!tournament) {
+          return reply.notFound(`Tournament with ID ${tournamentId} not found`);
+        }
+
+        // Verify division exists and belongs to tournament
+        const [division] = await db
+          .select()
+          .from(divisions)
+          .where(and(eq(divisions.id, divisionId), eq(divisions.tournament_id, tournamentId)))
+          .limit(1);
+
+        if (!division) {
+          return reply.notFound(`Division with ID ${divisionId} not found in tournament ${tournamentId}`);
+        }
+
         // Build conditions
         const conditions = [eq(teams.division_id, divisionId)];
 
@@ -592,23 +926,25 @@ const publicRoutes: FastifyPluginAsync = async (fastify) => {
             total: Number(total),
             limit,
             offset,
+            tournamentId,
+            divisionId,
           },
         });
       } catch (error) {
-        fastify.log.error({ error, divisionId }, 'Error fetching teams');
+        fastify.log.error({ error, tournamentId, divisionId }, 'Error fetching teams');
         throw error;
       }
     }
   );
 
   // ============================================
-  // GET /api/public/divisions/:divisionId/teams/:teamId
+  // GET /api/public/tournaments/:tournamentId/divisions/:divisionId/teams/:teamId
   // Get single team (public read-only)
   // ============================================
   fastify.get<{
     Params: z.infer<typeof teamParamsSchema>;
   }>(
-    '/divisions/:divisionId/teams/:teamId',
+    '/tournaments/:tournamentId/divisions/:divisionId/teams/:teamId',
     {
       ...rateLimitConfig,
     },
@@ -619,9 +955,31 @@ const publicRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.badRequest('Invalid parameters');
       }
 
-      const { divisionId, teamId } = paramsResult.data;
+      const { tournamentId, divisionId, teamId } = paramsResult.data;
 
       try {
+        // Verify tournament exists
+        const [tournament] = await db
+          .select()
+          .from(tournaments)
+          .where(eq(tournaments.id, tournamentId))
+          .limit(1);
+
+        if (!tournament) {
+          return reply.notFound(`Tournament with ID ${tournamentId} not found`);
+        }
+
+        // Verify division exists and belongs to tournament
+        const [division] = await db
+          .select()
+          .from(divisions)
+          .where(and(eq(divisions.id, divisionId), eq(divisions.tournament_id, tournamentId)))
+          .limit(1);
+
+        if (!division) {
+          return reply.notFound(`Division with ID ${divisionId} not found in tournament ${tournamentId}`);
+        }
+
         // Get team with pool name
         const result = await db
           .select({
@@ -661,40 +1019,53 @@ const publicRoutes: FastifyPluginAsync = async (fastify) => {
           },
         });
       } catch (error) {
-        fastify.log.error({ error, divisionId, teamId }, 'Error fetching team');
+        fastify.log.error({ error, tournamentId, divisionId, teamId }, 'Error fetching team');
         throw error;
       }
     }
   );
 
   // ============================================
-  // GET /api/public/divisions/:divisionId/pools
+  // GET /api/public/tournaments/:tournamentId/divisions/:divisionId/pools
   // List pools in a division (public read-only)
   // ============================================
   fastify.get<{
-    Params: { divisionId: string };
+    Params: z.infer<typeof poolParamsSchema>;
   }>(
-    '/divisions/:divisionId/pools',
+    '/tournaments/:tournamentId/divisions/:divisionId/pools',
     {
       ...rateLimitConfig,
     },
     async (request, reply) => {
-      const divisionId = Number(request.params.divisionId);
+      const paramsResult = poolParamsSchema.safeParse(request.params);
 
-      if (isNaN(divisionId)) {
-        return reply.badRequest('Invalid division ID');
+      if (!paramsResult.success) {
+        return reply.badRequest('Invalid tournament or division ID');
       }
 
+      const { tournamentId, divisionId } = paramsResult.data;
+
       try {
-        // Verify division exists
+        // Verify tournament exists
+        const [tournament] = await db
+          .select()
+          .from(tournaments)
+          .where(eq(tournaments.id, tournamentId))
+          .limit(1);
+
+        if (!tournament) {
+          return reply.notFound(`Tournament with ID ${tournamentId} not found`);
+        }
+
+        // Verify division exists and belongs to tournament
         const [division] = await db
           .select()
           .from(divisions)
-          .where(eq(divisions.id, divisionId))
+          .where(and(eq(divisions.id, divisionId), eq(divisions.tournament_id, tournamentId)))
           .limit(1);
 
         if (!division) {
-          return reply.notFound(`Division with ID ${divisionId} not found`);
+          return reply.notFound(`Division with ID ${divisionId} not found in tournament ${tournamentId}`);
         }
 
         // Get all pools for this division with team counts
@@ -735,15 +1106,19 @@ const publicRoutes: FastifyPluginAsync = async (fastify) => {
 
         return reply.send({
           data: poolsWithTeams,
+          meta: {
+            tournamentId,
+            divisionId,
+          },
         });
       } catch (error) {
-        fastify.log.error({ error, divisionId }, 'Error fetching pools');
+        fastify.log.error({ error, tournamentId, divisionId }, 'Error fetching pools');
         throw error;
       }
     }
   );
 
-  fastify.log.info('Public API routes registered');
+  fastify.log.info('Public API routes registered (Phase 2 - Tournament hierarchy)');
 };
 
 export default publicRoutes;
